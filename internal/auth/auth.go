@@ -58,6 +58,9 @@ func ParseStaticKeys(spec string) (*StaticKeys, error) {
 		if name == "" || key == "" {
 			return nil, fmt.Errorf("api key entry %d is malformed", i+1)
 		}
+		if strings.ContainsAny(key, " \t\r\n") || strings.ContainsAny(name, " \t\r\n") {
+			return nil, fmt.Errorf("api key entry %d must not contain whitespace", i+1)
+		}
 		if len(key) < 16 {
 			return nil, fmt.Errorf("api key %q is too short (minimum 16 characters)", name)
 		}

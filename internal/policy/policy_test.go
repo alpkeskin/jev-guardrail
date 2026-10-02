@@ -175,3 +175,22 @@ func TestDisabledRule(t *testing.T) {
 		t.Fatalf("EnabledCategories = %v", got)
 	}
 }
+
+func TestDocumentSeparatorsAccepted(t *testing.T) {
+	for name, content := range map[string]string{
+		"leading":  "---\n" + validDefault,
+		"trailing": validDefault + "---\n",
+		"both":     "---\n" + validDefault + "---\n...\n",
+	} {
+		if _, err := Load(writeFiles(t, map[string]string{"default.yaml": content})); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestDuplicateYAMLKeyRejected(t *testing.T) {
+	_, err := Load(writeFiles(t, map[string]string{"default.yaml": validDefault + "  prompt_injection:\n    threshold: 0.1\n    action: review\n"}))
+	if err == nil {
+		t.Fatal("duplicate rule key must fail")
+	}
+}

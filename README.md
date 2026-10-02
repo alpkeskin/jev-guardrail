@@ -175,7 +175,9 @@ rules:
   `client_id: default`. It is used when `X-Client-ID` is missing or unknown.
   Other files may not use the `default` client ID.
 * The policy store is indexed by the `client_id` inside each file, not by
-  filename.
+  filename. Client IDs are case-sensitive. When a supplied `X-Client-ID`
+  falls back to the default policy, every log line for that request carries
+  `policy_fallback: true`.
 * Startup fails if the default policy is missing or invalid, if any policy
   file is malformed or invalid, or if two files share a `client_id`.
   Validation rejects all of the following:
@@ -195,7 +197,7 @@ rules:
 | `GUARDRAIL_ADDR` | `:8080` | Listen address |
 | `GUARDRAIL_POLICY_DIR` | `policies` | Policy directory |
 | `GUARDRAIL_API_KEYS` | none | Comma-separated `name:key` or `key` entries (min. 16 characters per key) |
-| `GUARDRAIL_API_KEYS_FILE` | none | File with one `name:key` per line, merged with the above |
+| `GUARDRAIL_API_KEYS_FILE` | none | File with one `name:key` per line, merged with the above. Blank lines and `#` comments are ignored. |
 | `GUARDRAIL_AUTH_DISABLED` | `false` | Must be set explicitly to run without API keys |
 | `GUARDRAIL_MAX_BODY_BYTES` | `1048576` | Maximum request body size |
 | `GUARDRAIL_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
@@ -207,8 +209,10 @@ rules:
 | `JEV_EVALUATE_PATH` | `/v1/evaluate` | Jev evaluation endpoint |
 | `JEV_HEALTH_PATH` | `/health` | Jev health endpoint used by `/ready`; `-` disables the check |
 
-If no API keys are configured and authentication is not explicitly
-disabled, the service refuses to start.
+The service refuses to start in two cases:
+
+* no API keys are configured and authentication is not explicitly disabled
+* `GUARDRAIL_AUTH_DISABLED=true` is set while API keys are also configured
 
 ## Jev integration
 
@@ -254,6 +258,8 @@ The adapter applies these rules to Jev's response:
   was never evaluated, and the result is `JEV_ERROR` rather than an
   unreliable `PASSED`.
 * Unknown detectors are dropped.
+* Redirects from Jev are never followed. A 3xx response is treated as
+  `JEV_ERROR`.
 * Explanations are never exposed or logged.
 
 ## Logging

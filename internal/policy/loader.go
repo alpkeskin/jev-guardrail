@@ -93,9 +93,31 @@ func LoadFile(path string) (Policy, error) {
 		}
 		return Policy{}, fmt.Errorf("policy %s: malformed YAML: %w", path, err)
 	}
-	var extra yaml.Node
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return Policy{}, fmt.Errorf("policy %s: must contain exactly one YAML document", path)
+	// Any further document must be empty (e.g. a trailing "---").
+	for {
+		var extra yaml.Node
+		err := dec.Decode(&extra)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil || !emptyDocument(&extra) {
+			return Policy{}, fmt.Errorf("policy %s: must contain exactly one YAML document", path)
+		}
 	}
 	return validate(doc, path)
+}
+
+func emptyDocument(n *yaml.Node) bool {
+	if n.Kind == 0 {
+		return true
+	}
+	if n.Kind == yaml.DocumentNode {
+		for _, c := range n.Content {
+			if c.Kind != yaml.ScalarNode || c.Tag != "!!null" {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }

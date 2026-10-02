@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,13 +34,11 @@ func invalid(format string, args ...any) *requestError {
 	return &requestError{code: guardrail.ReasonInvalidRequest, status: http.StatusBadRequest, err: fmt.Errorf(format, args...)}
 }
 
-// decodeGuardRequest reads and validates the request body.
+// decodeGuardRequest reads and validates the request body. Error messages
+// never echo caller-supplied values, because they are logged.
 func decodeGuardRequest(w http.ResponseWriter, r *http.Request, maxBytes int64) (guardrail.EvaluationInput, *requestError) {
-	body := http.MaxBytesReader(w, r.Body, maxBytes)
-	dec := json.NewDecoder(body)
-
-	var req GuardRequest
-	if err := dec.Decode(&req); err != nil {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBytes))
+	if err != nil {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) {
 			return guardrail.EvaluationInput{}, &requestError{
@@ -47,7 +46,22 @@ func decodeGuardRequest(w http.ResponseWriter, r *http.Request, maxBytes int64) 
 				err: fmt.Errorf("request body exceeds %d bytes", maxBytes),
 			}
 		}
-		return guardrail.EvaluationInput{}, invalid("malformed JSON body: %v", err)
+		return guardrail.EvaluationInput{}, invalid("failed to read request body")
+	}
+	// encoding/json silently replaces invalid UTF-8 with U+FFFD, so the raw
+	// bytes must be checked before decoding; otherwise the evaluated content
+	// would differ from what the caller sent.
+	if !utf8.Valid(raw) {
+		return guardrail.EvaluationInput{}, &requestError{
+			code: guardrail.ReasonUnsupportedContent, status: http.StatusBadRequest,
+			err: errors.New("request body must be valid UTF-8"),
+		}
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	var req GuardRequest
+	if err := dec.Decode(&req); err != nil {
+		return guardrail.EvaluationInput{}, invalid("%s", describeJSONError(err))
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return guardrail.EvaluationInput{}, invalid("request body must contain a single JSON object")
@@ -58,12 +72,6 @@ func decodeGuardRequest(w http.ResponseWriter, r *http.Request, maxBytes int64) 
 	}
 	if *req.Content == "" {
 		return guardrail.EvaluationInput{}, invalid("content must not be empty")
-	}
-	if !utf8.ValidString(*req.Content) {
-		return guardrail.EvaluationInput{}, &requestError{
-			code: guardrail.ReasonUnsupportedContent, status: http.StatusBadRequest,
-			err: errors.New("content must be valid UTF-8"),
-		}
 	}
 
 	ct := req.ContentType
@@ -79,9 +87,25 @@ func decodeGuardRequest(w http.ResponseWriter, r *http.Request, maxBytes int64) 
 		if !contentType.Valid() {
 			return guardrail.EvaluationInput{}, &requestError{
 				code: guardrail.ReasonUnsupportedContent, status: http.StatusBadRequest,
-				err: fmt.Errorf("unsupported content_type %q", ct),
+				err: errors.New("unsupported content_type"),
 			}
 		}
 	}
 	return guardrail.EvaluationInput{Content: *req.Content, ContentType: contentType}, nil
+}
+
+// describeJSONError summarizes a decode error without quoting the body.
+func describeJSONError(err error) string {
+	var se *json.SyntaxError
+	var te *json.UnmarshalTypeError
+	switch {
+	case errors.As(err, &se):
+		return fmt.Sprintf("malformed JSON at offset %d", se.Offset)
+	case errors.As(err, &te):
+		return fmt.Sprintf("field %q has the wrong type", te.Field)
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return "request body is empty or truncated"
+	default:
+		return "malformed JSON body"
+	}
 }

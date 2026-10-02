@@ -35,7 +35,7 @@ func TestStaticKeys(t *testing.T) {
 }
 
 func TestParseStaticKeysErrors(t *testing.T) {
-	for _, spec := range []string{"", " , ", "short", "a:", ":0123456789abcdef", "a:0123456789abcdef,a:fedcba9876543210"} {
+	for _, spec := range []string{"", " , ", "short", "a:", ":0123456789abcdef", "a:0123456789abcdef,a:fedcba9876543210", "# a comment that is long enough", "name:0123456789 abcdef"} {
 		if _, err := ParseStaticKeys(spec); err == nil {
 			t.Errorf("ParseStaticKeys(%q) should fail", spec)
 		}

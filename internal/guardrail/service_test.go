@@ -52,3 +52,37 @@ func TestFailedJudgmentRejectsSecurityCodes(t *testing.T) {
 		t.Fatalf("FAILED must never carry a security reason, got %s", j.Reason.Code)
 	}
 }
+
+type engineFunc func() Judgment
+
+func (f engineFunc) Decide(context.Context, Policy, []Finding) Judgment { return f() }
+
+func TestServiceEnforcesJudgmentInvariants(t *testing.T) {
+	tests := []struct {
+		name string
+		in   Judgment
+		want Decision
+		code ReasonCode
+	}{
+		{"failed without reason", Judgment{Decision: Failed}, Failed, ReasonInternalError},
+		{"failed with security reason", Judgment{Decision: Failed, Reason: &Reason{Code: "PROMPT_INJECTION"}}, Failed, ReasonInternalError},
+		{"failed with findings", Judgment{Decision: Failed, Reason: &Reason{Code: ReasonJevError}, Findings: []Finding{{Category: CategoryJailbreak}}}, Failed, ReasonJevError},
+		{"blocked without reason", Judgment{Decision: Blocked}, Failed, ReasonInternalError},
+		{"blocked with failure reason", Judgment{Decision: Blocked, Reason: &Reason{Code: ReasonJevError}}, Failed, ReasonInternalError},
+		{"passed with security reason", Judgment{Decision: Passed, Reason: &Reason{Code: "JAILBREAK"}}, Failed, ReasonInternalError},
+		{"passed with NONE", Judgment{Decision: Passed, Reason: &Reason{Code: ReasonNone}}, Passed, ReasonNone},
+		{"unknown decision", Judgment{Decision: "MAYBE"}, Failed, ReasonInternalError},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			in := tc.in
+			j := NewService(&MockEvaluator{}, engineFunc(func() Judgment { return in })).Guard(context.Background(), testPolicy(), EvaluationInput{Content: "x"})
+			if j.Decision != tc.want || (j.Reason != nil && j.Reason.Code != tc.code) {
+				t.Fatalf("got %+v", j)
+			}
+			if j.Decision == Failed && (j.Reason == nil || len(j.Findings) != 0) {
+				t.Fatalf("bad FAILED judgment %+v", j)
+			}
+		})
+	}
+}

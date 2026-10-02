@@ -106,3 +106,21 @@ func TestRecover(t *testing.T) {
 		t.Fatalf("code = %d", w.Code)
 	}
 }
+
+func TestRecoverAfterResponseStartedAborts(t *testing.T) {
+	called := false
+	h := Recover(func(http.ResponseWriter, *http.Request) { called = true })(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("partial"))
+			panic("boom")
+		}))
+	defer func() {
+		if rec := recover(); rec != http.ErrAbortHandler {
+			t.Fatalf("recover = %v, want http.ErrAbortHandler", rec)
+		}
+		if called {
+			t.Fatal("onPanic must not write a second response")
+		}
+	}()
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+}

@@ -37,7 +37,10 @@ func (s *Service) Guard(ctx context.Context, policy Policy, input EvaluationInpu
 		return j
 	}
 
-	j := s.engine.Decide(ctx, policy, eval.Findings)
+	j, ok := validJudgment(s.engine.Decide(ctx, policy, eval.Findings))
+	if !ok {
+		log.Error("policy engine returned an invalid judgment")
+	}
 	attrs := []slog.Attr{
 		slog.String("judgment", string(j.Decision)),
 		slog.Int("matched_findings", len(j.Findings)),
@@ -55,4 +58,26 @@ func (s *Service) Ready(ctx context.Context) error {
 		return rc.Ready(ctx)
 	}
 	return nil
+}
+
+// validJudgment enforces the judgment invariants on engine output, so a
+// buggy or custom PolicyEngine can never break the API contract:
+// PASSED has no reason (or NONE), BLOCKED carries a security reason and
+// FAILED carries a failure reason.
+func validJudgment(j Judgment) (Judgment, bool) {
+	switch j.Decision {
+	case Passed:
+		if j.Reason == nil || j.Reason.Code == ReasonNone {
+			return j, true
+		}
+	case Blocked:
+		if j.Reason != nil && Category(j.Reason.Code).IsKnown() {
+			return j, true
+		}
+	case Failed:
+		if j.Reason != nil && j.Reason.Code.IsFailure() {
+			return FailedJudgment(j.Reason.Code), true
+		}
+	}
+	return FailedJudgment(ReasonInternalError), false
 }

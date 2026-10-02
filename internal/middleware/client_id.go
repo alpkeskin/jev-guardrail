@@ -44,8 +44,10 @@ func ResolvePolicy(resolver policy.Resolver) func(http.Handler) http.Handler {
 			clientID := reqctx.ClientID(ctx)
 			p, found := resolver.Resolve(clientID)
 			logger := reqctx.LoggerFromContext(ctx).With(slog.String("policy_id", p.ClientID))
-			if clientID != "" && !found {
-				logger.Debug("no policy for client id, using default policy")
+			if clientID != "" && clientID != p.ClientID && !found {
+				// Surface silent fallbacks (e.g. a typo or wrong case in
+				// X-Client-ID) on every request log line.
+				logger = logger.With(slog.Bool("policy_fallback", true))
 			}
 			ctx = reqctx.WithPolicy(ctx, p)
 			ctx = reqctx.WithLogger(ctx, logger)

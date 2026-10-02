@@ -74,6 +74,8 @@ func TestContentNeverLogged(t *testing.T) {
 		h := newHarness(t, mock)
 		h.guard(t, `{"content":"`+secret+`"}`, nil)
 		h.guard(t, `{"content":"`+secret+`","content_type":"bogus"}`, nil)
+		h.guard(t, `{"content":"x","content_type":"`+secret+`"}`, nil)
+		h.guard(t, `{"content":`+secret+`}`, nil)
 		if strings.Contains(h.logs.String(), secret) {
 			t.Fatalf("raw content logged:\n%s", h.logs.String())
 		}
@@ -97,5 +99,26 @@ func TestHealthEndpoints(t *testing.T) {
 	}
 	if len(*reqs) != 0 {
 		t.Fatal("health endpoints must not run evaluations")
+	}
+}
+
+func TestPolicyFallbackIsLogged(t *testing.T) {
+	h := newHarness(t, findings())
+	h.guard(t, `{"content":"hi"}`, map[string]string{"X-Client-ID": "Acme-Production", "X-Request-ID": "req_fallback"})
+	h.guard(t, `{"content":"hi"}`, map[string]string{"X-Client-ID": "acme-production", "X-Request-ID": "req_known"})
+	for _, line := range h.logs.Lines(t) {
+		if line["msg"] != "guardrail evaluation completed" {
+			continue
+		}
+		switch line["request_id"] {
+		case "req_fallback":
+			if line["policy_fallback"] != true || line["policy_id"] != "default" {
+				t.Errorf("fallback not flagged: %v", line)
+			}
+		case "req_known":
+			if _, ok := line["policy_fallback"]; ok {
+				t.Errorf("known client flagged as fallback: %v", line)
+			}
+		}
 	}
 }

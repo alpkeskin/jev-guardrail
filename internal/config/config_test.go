@@ -55,3 +55,23 @@ func TestLoadErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestKeysFileSkipsCommentsAndBlankLines(t *testing.T) {
+	keyFile := filepath.Join(t.TempDir(), "keys")
+	content := "# production keys for the litellm gateway\n\n  litellm:0123456789abcdef  \r\n# another comment line here\n"
+	_ = os.WriteFile(keyFile, []byte(content), 0o600)
+	c, err := Load(env(map[string]string{"JEV_URL": "http://jev", "GUARDRAIL_API_KEYS_FILE": keyFile}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.APIKeys != "litellm:0123456789abcdef" {
+		t.Fatalf("APIKeys = %q", c.APIKeys)
+	}
+}
+
+func TestAuthDisabledConflictsWithKeys(t *testing.T) {
+	_, err := Load(env(map[string]string{"JEV_URL": "http://jev", "GUARDRAIL_AUTH_DISABLED": "true", "GUARDRAIL_API_KEYS": "k"}))
+	if err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("err = %v", err)
+	}
+}

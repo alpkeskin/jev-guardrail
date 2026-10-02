@@ -92,7 +92,20 @@ func Load(getenv func(string) string) (Config, error) {
 		if err != nil {
 			errs = append(errs, fmt.Errorf("GUARDRAIL_API_KEYS_FILE: %w", err))
 		} else {
-			lines := strings.FieldsFunc(string(data), func(r rune) bool { return r == '\n' || r == '\r' })
+			// One "name:key" or "key" per line; blank lines and # comments
+			// are skipped so they can never become valid keys.
+			var lines []string
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				if strings.Contains(line, ",") {
+					errs = append(errs, errors.New("GUARDRAIL_API_KEYS_FILE: entries must not contain commas"))
+					continue
+				}
+				lines = append(lines, line)
+			}
 			extra := strings.Join(lines, ",")
 			if c.APIKeys != "" && extra != "" {
 				c.APIKeys += ","
@@ -103,6 +116,10 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if c.JevURL == "" {
 		errs = append(errs, errors.New("JEV_URL is required"))
+	}
+	if c.AuthDisabled && strings.TrimSpace(c.APIKeys) != "" {
+		// Refuse ambiguous configuration rather than silently ignoring keys.
+		errs = append(errs, errors.New("GUARDRAIL_AUTH_DISABLED=true conflicts with configured API keys"))
 	}
 	if !c.AuthDisabled && strings.TrimSpace(c.APIKeys) == "" {
 		errs = append(errs, errors.New("authentication requires GUARDRAIL_API_KEYS or GUARDRAIL_API_KEYS_FILE (or GUARDRAIL_AUTH_DISABLED=true)"))

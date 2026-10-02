@@ -56,14 +56,18 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
-		hc = &http.Client{Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			DialContext:         (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
-			IdleConnTimeout:     90 * time.Second,
-			TLSHandshakeTimeout: 2 * time.Second,
-		}}
+		hc = &http.Client{
+			// Never follow redirects: a redirect would resend content and
+			// credentials to an endpoint that was not configured.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			Transport: &http.Transport{
+				Proxy:               http.ProxyFromEnvironment,
+				DialContext:         (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     90 * time.Second,
+				TLSHandshakeTimeout: 2 * time.Second,
+			}}
 	}
 	return &Client{
 		base:       u,
@@ -102,10 +106,13 @@ func (c *Client) Evaluate(ctx context.Context, req EvaluateRequest) (EvaluateRes
 	if err != nil {
 		return EvaluateResponse{}, c.classifyTransportError(ctx, tctx, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Drain so the keep-alive connection can be reused.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
+		resp.Body.Close()
+	}()
 
 	if err := classifyStatus(resp.StatusCode); err != nil {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
 		return EvaluateResponse{}, err
 	}
 

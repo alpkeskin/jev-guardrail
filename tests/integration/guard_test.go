@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,10 @@ func TestJudgments(t *testing.T) {
 		{"unsupported content type", findings(pi), `{"content":"x","content_type":"video"}`, 400, guardrail.Failed, "UNSUPPORTED_CONTENT", nil},
 		{"conflicting type alias", findings(pi), `{"content":"x","type":"prompt","content_type":"response"}`, 400, guardrail.Failed, "INVALID_REQUEST", nil},
 		{"body too large", findings(pi), `{"content":"` + strings.Repeat("a", 5000) + `"}`, 413, guardrail.Failed, "INVALID_REQUEST", nil},
+		{"invalid utf-8 is not silently rewritten", findings(pi), "{\"content\":\"a\xff\xfeb\"}", 400, guardrail.Failed, "UNSUPPORTED_CONTENT", nil},
+		{"oversized body after valid object", findings(pi), `{"content":"x"}` + strings.Repeat(" ", 5000), 413, guardrail.Failed, "INVALID_REQUEST", nil},
+		{"json null body", findings(pi), `null`, 400, guardrail.Failed, "INVALID_REQUEST", nil},
+		{"empty body", findings(pi), ``, 400, guardrail.Failed, "INVALID_REQUEST", nil},
 		{"unknown fields tolerated", findings(pi), `{"content":"x","metadata":{"tenant":"t1"}}`, 200, guardrail.Blocked, "PROMPT_INJECTION",
 			[]guardrail.Category{guardrail.CategoryPromptInjection}},
 	}
@@ -265,5 +270,24 @@ func TestJevDown(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("/ready = %d with jev down", resp.StatusCode)
+	}
+}
+
+func TestJevRedirectNotFollowed(t *testing.T) {
+	var hit bool
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit = true }))
+	defer target.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer redirector.Close()
+
+	h := newHarness(t, newJevEvaluator(t, redirector.URL, time.Second))
+	r := h.guard(t, injection, nil)
+	if r.status != 502 || r.body.Reason == nil || r.body.Reason.Code != "JEV_ERROR" {
+		t.Fatalf("status=%d body=%s", r.status, r.raw)
+	}
+	if hit {
+		t.Fatal("redirect was followed: content sent to an unconfigured endpoint")
 	}
 }
