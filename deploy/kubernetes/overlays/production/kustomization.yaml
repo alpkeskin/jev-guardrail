@@ -1,0 +1,25 @@
+# Example production overlay. Copy and adapt per environment.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: jev-guardrail
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/servicemonitor
+
+images:
+  - name: ghcr.io/alpkeskin/jev-guardrail
+    newTag: "0.1.0" # prefer pinning by digest: digest: sha256:...
+
+configMapGenerator:
+  - name: jev-guardrail-config
+    behavior: merge
+    literals:
+      - JEV_URL=https://jev.internal.example.com
+  - name: jev-guardrail-policies
+    behavior: merge
+    files:
+      - policies/example.yaml

@@ -79,7 +79,7 @@ func Load(dir string) (*Store, error) {
 // LoadFile parses and validates a single policy file. Unknown YAML fields
 // are rejected so typos cannot silently weaken a policy.
 func LoadFile(path string) (Policy, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from the operator-configured policy directory
 	if err != nil {
 		return Policy{}, fmt.Errorf("policy %s: %w", path, err)
 	}

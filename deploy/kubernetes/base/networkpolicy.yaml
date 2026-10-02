@@ -1,0 +1,23 @@
+# Restricts ingress. Adjust the sources to your callers (e.g. only the
+# LiteLLM namespace) and your monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jev-guardrail
+spec:
+  podSelector:
+    matchLabels: {}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - port: http
+          protocol: TCP
+      from:
+        - namespaceSelector: {}
+    - ports:
+        - port: metrics
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring

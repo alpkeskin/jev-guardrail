@@ -47,6 +47,9 @@ func statusFor(j guardrail.Judgment) int {
 	if j.Decision != guardrail.Failed {
 		return http.StatusOK
 	}
+	if j.Reason == nil {
+		return http.StatusInternalServerError
+	}
 	switch j.Reason.Code {
 	case guardrail.ReasonInvalidRequest, guardrail.ReasonUnsupportedContent:
 		return http.StatusBadRequest

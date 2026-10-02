@@ -59,7 +59,7 @@ func respondScores(scores map[string]float64) func(http.ResponseWriter, Evaluate
 
 func newTestClient(t *testing.T, url string, timeout time.Duration) *Client {
 	t.Helper()
-	c, err := NewClient(ClientConfig{BaseURL: url, APIKey: "jev-secret", Timeout: timeout, HealthPath: "/health"})
+	c, err := NewClient(ClientConfig{BaseURL: url, APIKey: "jev-secret", AuthScheme: "Bearer", Timeout: timeout, HealthPath: "/health"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,5 +230,49 @@ func TestNewClientValidation(t *testing.T) {
 	}
 	if _, err := NewClient(ClientConfig{BaseURL: "http://jev", Timeout: 0}); err == nil {
 		t.Error("zero timeout should fail")
+	}
+}
+
+func TestAuthHeaderConfiguration(t *testing.T) {
+	tests := []struct {
+		header, scheme, wantHeader, wantValue string
+	}{
+		{"", "Bearer", "Authorization", "Bearer k-123"},
+		{"X-API-Key", "", "X-Api-Key", "k-123"},
+		{"authorization", "Token", "Authorization", "Token k-123"},
+	}
+	for _, tc := range tests {
+		fj := &fakeJev{handler: respondScores(nil)}
+		srv := httptest.NewServer(fj)
+		c, err := NewClient(ClientConfig{BaseURL: srv.URL, APIKey: "k-123", AuthHeader: tc.header, AuthScheme: tc.scheme, Timeout: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = c.Evaluate(context.Background(), EvaluateRequest{Detectors: []string{"jailbreak"}})
+		srv.Close()
+		if got := fj.headers[0].Get(tc.wantHeader); got != tc.wantValue {
+			t.Errorf("%s = %q, want %q", tc.wantHeader, got, tc.wantValue)
+		}
+		if tc.wantHeader != "Authorization" && fj.headers[0].Get("Authorization") != "" {
+			t.Errorf("unexpected Authorization header")
+		}
+	}
+}
+
+func TestAuthConfigValidation(t *testing.T) {
+	bad := []ClientConfig{
+		{APIKey: ""},
+		{APIKey: "has space"},
+		{APIKey: "line\nbreak"},
+		{APIKey: "k", AuthHeader: "Bad Header"},
+		{APIKey: "k", AuthHeader: "Host"},
+		{APIKey: "k", AuthHeader: "content-type"},
+		{APIKey: "k", AuthScheme: "Bear er"},
+	}
+	for _, cfg := range bad {
+		cfg.BaseURL, cfg.Timeout = "http://jev", time.Second
+		if _, err := NewClient(cfg); err == nil {
+			t.Errorf("NewClient(%+v) should fail", cfg)
+		}
 	}
 }

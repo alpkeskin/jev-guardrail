@@ -7,23 +7,47 @@ import (
 	"github.com/alpkeskin/jev-guardrail/internal/logging"
 )
 
+// JudgmentObserver is notified of every judgment (e.g. for metrics).
+type JudgmentObserver interface {
+	ObserveJudgment(ctx context.Context, policy Policy, j Judgment)
+}
+
 // Service runs the guardrail pipeline: evaluate, then decide.
 type Service struct {
 	evaluator Evaluator
 	engine    PolicyEngine
+	observer  JudgmentObserver
 }
 
+// Option configures a Service.
+type Option func(*Service)
+
+// WithObserver registers a JudgmentObserver.
+func WithObserver(o JudgmentObserver) Option { return func(s *Service) { s.observer = o } }
+
 // NewService returns a Service. A nil engine defaults to ThresholdEngine.
-func NewService(evaluator Evaluator, engine PolicyEngine) *Service {
+func NewService(evaluator Evaluator, engine PolicyEngine, opts ...Option) *Service {
 	if engine == nil {
 		engine = ThresholdEngine{}
 	}
-	return &Service{evaluator: evaluator, engine: engine}
+	s := &Service{evaluator: evaluator, engine: engine}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Guard evaluates input against policy. It always returns a judgment;
 // evaluator errors become FAILED, never BLOCKED.
 func (s *Service) Guard(ctx context.Context, policy Policy, input EvaluationInput) Judgment {
+	j := s.guard(ctx, policy, input)
+	if s.observer != nil {
+		s.observer.ObserveJudgment(ctx, policy, j)
+	}
+	return j
+}
+
+func (s *Service) guard(ctx context.Context, policy Policy, input EvaluationInput) Judgment {
 	log := logging.FromContext(ctx)
 
 	eval, err := s.evaluator.Evaluate(ctx, input, policy)

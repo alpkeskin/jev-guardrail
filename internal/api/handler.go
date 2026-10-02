@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	reqctx "github.com/alpkeskin/jev-guardrail/internal/context"
@@ -28,6 +29,7 @@ type Handler struct {
 	maxBodyBytes int64
 	checks       []ReadinessCheck
 	readyTimeout time.Duration
+	draining     atomic.Bool
 }
 
 // NewHandler returns a Handler.
@@ -65,9 +67,22 @@ func (h *Handler) Health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// Ready serves GET /ready: configuration is loaded and dependencies are
-// reachable. It never runs a guardrail evaluation.
+// SetDraining makes /ready fail so load balancers stop routing new
+// traffic before the server shuts down. In-flight and new requests are
+// still served until the listener closes.
+func (h *Handler) SetDraining() { h.draining.Store(true) }
+
+// Draining reports whether SetDraining was called.
+func (h *Handler) Draining() bool { return h.draining.Load() }
+
+// Ready serves GET /ready: configuration is loaded, dependencies are
+// reachable and the instance is not shutting down. It never runs a
+// guardrail evaluation.
 func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
+	if h.draining.Load() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "draining", "checks": map[string]string{}})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), h.readyTimeout)
 	defer cancel()
 

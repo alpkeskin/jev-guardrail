@@ -29,22 +29,58 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
-// AccessLog logs one line per request. Request bodies are never logged.
-func AccessLog(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w}
-		next.ServeHTTP(rec, r)
-		if rec.status == 0 {
-			rec.status = http.StatusOK
-		}
-		reqctx.LoggerFromContext(r.Context()).LogAttrs(r.Context(), slog.LevelInfo, "http request",
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.Int("status", rec.status),
-			slog.Duration("duration", time.Since(start)),
-		)
-	})
+// HTTPObserver records per-request HTTP telemetry.
+type HTTPObserver interface {
+	ObserveHTTP(route, method string, status int, d time.Duration)
+}
+
+// RouteFunc returns a bounded route label for a request (e.g. the mux
+// pattern), never the raw path.
+type RouteFunc func(*http.Request) string
+
+var knownMethods = map[string]bool{
+	http.MethodGet: true, http.MethodHead: true, http.MethodPost: true, http.MethodPut: true,
+	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
+}
+
+// AccessLog logs one line per request and reports it to obs (optional).
+// Request bodies are never logged. Label values are bounded so arbitrary
+// paths or methods cannot create unbounded metric series.
+func AccessLog(obs HTTPObserver, route RouteFunc) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rec := &statusRecorder{ResponseWriter: w}
+			// Resolve the route before serving; handlers may replace r.
+			label := "unmatched"
+			if route != nil {
+				if l := route(r); l != "" {
+					label = l
+				}
+			}
+			defer func() {
+				// Runs even when the handler aborts with a panic.
+				if rec.status == 0 {
+					rec.status = http.StatusOK
+				}
+				d := time.Since(start)
+				method := r.Method
+				if !knownMethods[method] {
+					method = "OTHER"
+				}
+				if obs != nil {
+					obs.ObserveHTTP(label, method, rec.status, d)
+				}
+				reqctx.LoggerFromContext(r.Context()).LogAttrs(r.Context(), slog.LevelInfo, "http request",
+					slog.String("method", method),
+					slog.String("route", label),
+					slog.Int("status", rec.status),
+					slog.Duration("duration", d),
+				)
+			}()
+			next.ServeHTTP(rec, r)
+		})
+	}
 }
 
 // Chain applies middleware so that the first one listed runs first.

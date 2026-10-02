@@ -1,0 +1,43 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: jev-guardrail
+      app.kubernetes.io/component: api
+      app.kubernetes.io/part-of: jev-guardrail
+    includeSelectors: true
+
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+  - hpa.yaml
+  - networkpolicy.yaml
+
+configMapGenerator:
+  # Non-secret configuration. See README "Configuration" for all variables.
+  - name: jev-guardrail-config
+    literals:
+      - GUARDRAIL_LOG_LEVEL=info
+      - GUARDRAIL_LOG_FORMAT=json
+      - JEV_URL=http://jev.jev.svc.cluster.local:8000
+      - JEV_TIMEOUT=5s
+      - JEV_MAX_CONCURRENCY=100
+      - JEV_QUEUE_TIMEOUT=250ms
+      - JEV_CIRCUIT_BREAKER_THRESHOLD=5
+      - JEV_CIRCUIT_BREAKER_OPEN_TIMEOUT=15s
+      # Readiness does not depend on Jev: if Jev is down, every replica
+      # would become unready at once and callers would get connection
+      # errors instead of structured FAILED/JEV_UNAVAILABLE judgments.
+      # Jev health is visible via metrics and the circuit breaker.
+      - GUARDRAIL_READY_CHECK_JEV=false
+      # Keep serving while endpoints/load balancers stop routing to the pod.
+      - GUARDRAIL_SHUTDOWN_DELAY=10s
+      - GUARDRAIL_SHUTDOWN_TIMEOUT=20s
+  # Policies are mounted read-only at /app/policies. default.yaml is
+  # mandatory; overlays add client policies with behavior: merge.
+  - name: jev-guardrail-policies
+    files:
+      - policies/default.yaml

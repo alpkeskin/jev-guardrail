@@ -27,7 +27,9 @@ Responsibilities are split like this:
 make test                     # unit + integration tests (no real Jev needed)
 make build
 
-JEV_URL=http://jev:8000 \
+make mockjev &                # development-only Jev stand-in on :8000
+JEV_URL=http://localhost:8000 \
+JEV_API_KEY=dev-jev-key \
 GUARDRAIL_API_KEYS=litellm:change-me-0123456789 \
 ./bin/guardrail
 ```
@@ -120,13 +122,18 @@ Authentication failures return `401` with
 `{"error":{"code":"UNAUTHORIZED",...},"request_id":...}`. This is not a
 judgment, because no evaluation was attempted.
 
-### `GET /health` and `GET /ready`
+### `GET /health`, `GET /ready` and `GET /openapi.yaml`
 
 These endpoints are unauthenticated and never run an evaluation.
 
-* `/health` returns 200 while the process is alive.
-* `/ready` reports whether policies are loaded and Jev's health endpoint
-  responds. It returns 200 `{"status":"ready"}` or 503 `{"status":"not_ready"}`.
+* `/health` returns 200 while the process is alive. It stays 200 while the
+  instance is draining.
+* `/ready` reports whether policies are loaded and, when
+  `GUARDRAIL_READY_CHECK_JEV=true`, whether Jev's health endpoint
+  responds. It returns 200 `{"status":"ready"}`, or 503 with
+  `{"status":"not_ready"}` or `{"status":"draining"}`.
+* `/openapi.yaml` serves the OpenAPI 3.1 contract
+  ([`internal/api/openapi.yaml`](internal/api/openapi.yaml)).
 
 ## Taxonomy
 
@@ -192,27 +199,135 @@ rules:
 
 ## Configuration
 
+All configuration comes from environment variables. Invalid or ambiguous
+configuration fails startup. Every `*_FILE` variable reads its value from a
+file, such as a mounted Kubernetes secret.
+
+**Server**
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GUARDRAIL_ADDR` | `:8080` | Listen address |
+| `GUARDRAIL_ADDR` | `:8080` | API listen address |
+| `GUARDRAIL_METRICS_ADDR` | `:9090` | Prometheus `/metrics` listen address (`-` disables it). Must differ from the API address. |
 | `GUARDRAIL_POLICY_DIR` | `policies` | Policy directory |
-| `GUARDRAIL_API_KEYS` | none | Comma-separated `name:key` or `key` entries (min. 16 characters per key) |
-| `GUARDRAIL_API_KEYS_FILE` | none | File with one `name:key` per line, merged with the above. Blank lines and `#` comments are ignored. |
-| `GUARDRAIL_AUTH_DISABLED` | `false` | Must be set explicitly to run without API keys |
 | `GUARDRAIL_MAX_BODY_BYTES` | `1048576` | Maximum request body size |
 | `GUARDRAIL_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `GUARDRAIL_LOG_FORMAT` | `json` | `json` or `text` |
-| `GUARDRAIL_SHUTDOWN_TIMEOUT` | `15s` | Graceful shutdown timeout |
+| `GUARDRAIL_READY_CHECK_JEV` | `true` | Include the Jev health check in `/ready` (see [Operations](#operations)) |
+| `GUARDRAIL_SHUTDOWN_DELAY` | `5s` | How long the instance keeps serving with `/ready`=503 after SIGTERM, before closing listeners |
+| `GUARDRAIL_SHUTDOWN_TIMEOUT` | `15s` | Maximum time to drain in-flight requests |
+
+**Caller authentication**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GUARDRAIL_API_KEYS` | none | Comma-separated `name:key` or `key` entries (min. 16 characters, no whitespace) |
+| `GUARDRAIL_API_KEYS_FILE` | none | One `name:key` per line, merged with the above. Blank lines and `#` comments are ignored. |
+| `GUARDRAIL_AUTH_DISABLED` | `false` | Must be set explicitly to run without API keys. Conflicts with configured keys. |
+
+**Jev**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `JEV_URL` | **required** | Jev base URL |
-| `JEV_API_KEY` | none | Sent to Jev as `Authorization: Bearer` |
+| `JEV_API_KEY` / `JEV_API_KEY_FILE` | **required** (exactly one) | Jev API key |
+| `JEV_AUTH_HEADER` | `Authorization` | Header that carries the key, for example `X-API-Key` |
+| `JEV_AUTH_SCHEME` | `Bearer` for `Authorization`, otherwise empty | Prefix for the key (`-` sends the bare key) |
 | `JEV_TIMEOUT` | `5s` | Per-evaluation timeout |
 | `JEV_EVALUATE_PATH` | `/v1/evaluate` | Jev evaluation endpoint |
-| `JEV_HEALTH_PATH` | `/health` | Jev health endpoint used by `/ready`; `-` disables the check |
+| `JEV_HEALTH_PATH` | `/health` | Jev health endpoint used by readiness (`-` disables it) |
+| `JEV_MAX_CONCURRENCY` | `100` | Maximum concurrent Jev calls per instance. Also caps Jev connections. |
+| `JEV_QUEUE_TIMEOUT` | `250ms` | Maximum wait for a free slot before failing fast (`0` means no waiting) |
+| `JEV_CIRCUIT_BREAKER_THRESHOLD` | `5` | Consecutive Jev failures that open the breaker (`0` disables it) |
+| `JEV_CIRCUIT_BREAKER_OPEN_TIMEOUT` | `15s` | How long the breaker stays open before probing |
+| `JEV_CIRCUIT_BREAKER_HALF_OPEN_REQUESTS` | `1` | Concurrent probe requests while half-open |
 
-The service refuses to start in two cases:
+## Resilience
 
-* no API keys are configured and authentication is not explicitly disabled
-* `GUARDRAIL_AUTH_DISABLED=true` is set while API keys are also configured
+Jev is the only dependency. The service protects itself, and its callers,
+from a slow or failing Jev in two ways:
+
+* **Concurrency limit.**
+  * At most `JEV_MAX_CONCURRENCY` Jev calls run at once per instance.
+  * Extra calls wait up to `JEV_QUEUE_TIMEOUT` for a free slot.
+  * If no slot frees up, the call fails fast with `FAILED` /
+    `JEV_UNAVAILABLE` instead of piling up goroutines and connections.
+* **Circuit breaker.**
+  * The breaker opens after `JEV_CIRCUIT_BREAKER_THRESHOLD` consecutive Jev
+    failures: timeouts, connection errors, 5xx, 429, 401/403/404, or
+    invalid responses.
+  * While it is open, calls fail immediately with `FAILED` /
+    `JEV_UNAVAILABLE` instead of each waiting `JEV_TIMEOUT`.
+  * After `JEV_CIRCUIT_BREAKER_OPEN_TIMEOUT`, a probe request either closes
+    the breaker or reopens it.
+  * Request-specific rejections (400, 413, 422) and caller cancellations do
+    **not** count. Otherwise a single caller sending bad content could cut
+    off every other caller.
+
+Rejections are always `FAILED`, never `BLOCKED`. The service does not
+retry, because retries amplify load on a struggling dependency. Retries
+and fail-open or fail-closed behaviour belong to the caller.
+
+## Metrics
+
+Prometheus metrics are served on `GUARDRAIL_METRICS_ADDR` at `/metrics`,
+separately from the API port. Every label value comes from a bounded set,
+so caller input cannot create unbounded series.
+
+| Metric | Labels |
+|--------|--------|
+| `guardrail_http_requests_total`, `guardrail_http_request_duration_seconds` | `route` (mux pattern or `unmatched`), `method`, `code` |
+| `guardrail_judgments_total` | `judgment`, `reason_code`, `policy_id` |
+| `guardrail_findings_total` | `category`, `policy_id` |
+| `guardrail_jev_requests_total`, `guardrail_jev_request_duration_seconds` | `outcome`: `success`, `timeout`, `unavailable`, `error`, `canceled`, `rejected_circuit_open` or `rejected_concurrency_limit` |
+| `guardrail_jev_in_flight_requests` | none |
+| `guardrail_jev_circuit_breaker_state`, `guardrail_jev_circuit_breaker_transitions_total` | `state` / `to` |
+| `guardrail_policies_loaded`, `guardrail_draining`, `guardrail_build_info` | none, except `version` and `commit` on `build_info` |
+
+Go runtime and process metrics are also exported. Suggested alerts are in
+[`deploy/kubernetes/README.md`](deploy/kubernetes/README.md).
+
+## Operations
+
+* **Graceful shutdown.** On SIGTERM the instance shuts down in this order:
+  1. `/ready` returns 503 (`draining`) immediately.
+  2. The instance keeps serving for `GUARDRAIL_SHUTDOWN_DELAY`, so load
+     balancers stop routing to it.
+  3. It stops accepting new connections and drains in-flight requests for
+     up to `GUARDRAIL_SHUTDOWN_TIMEOUT`.
+
+  A second signal skips the delay.
+* **Readiness and Jev.** With `GUARDRAIL_READY_CHECK_JEV=true` (the
+  default, per the original spec), a Jev outage makes every replica unready
+  at once. Callers then get connection errors instead of `FAILED`
+  judgments. The Kubernetes manifests therefore set it to `false`.
+* **Deployment.** Kubernetes manifests are in
+  [`deploy/kubernetes`](deploy/kubernetes). The container image is
+  distroless and runs as non-root, and the manifests set a read-only root
+  filesystem.
+* **Version.** `guardrail -version` prints the version. It is also exposed
+  as `guardrail_build_info`.
+
+## Release process
+
+* **CI** (`.github/workflows/ci.yml`) runs on every push and pull request:
+  * a `go mod tidy` check, gofmt, vet and race tests with coverage
+  * golangci-lint
+  * govulncheck
+  * Kubernetes manifest schema validation and image-pin checks
+  * an image build plus an end-to-end container smoke test
+    (`scripts/smoke-test.sh`)
+* **Release** (`.github/workflows/release.yml`) runs when a `vX.Y.Z` tag is
+  pushed:
+  * re-runs the verification
+  * builds `linux/amd64` and `linux/arm64` images
+  * pushes them to `ghcr.io/alpkeskin/jev-guardrail` with an SBOM and
+    max-mode provenance attestations
+  * signs them keylessly with cosign
+* All third-party actions are pinned to commit SHAs. Dependabot keeps Go
+  modules, actions and base images up to date.
+* `make check` runs the CI checks locally. `make smoke` builds the image
+  and runs the smoke test.
 
 ## Jev integration
 
@@ -228,7 +343,7 @@ this package changes.
 
 ```http
 POST {JEV_URL}/v1/evaluate
-Authorization: Bearer {JEV_API_KEY}
+Authorization: Bearer {JEV_API_KEY}        # header and scheme are configurable
 X-Request-ID: req_123
 
 {"input": "...", "input_type": "prompt",
@@ -289,16 +404,22 @@ owns the decision, and `auth.Authenticator` owns caller identity.
 
 ```text
 cmd/guardrail/          entrypoint and wiring
-internal/api/           HTTP handlers, request/response contract, router
+internal/api/           HTTP handlers, request/response contract, router, OpenAPI spec
 internal/auth/          API-key authentication (separate from policy selection)
 internal/config/        environment configuration
 internal/context/       typed context accessors (package reqctx)
 internal/guardrail/     taxonomy, types, Evaluator, PolicyEngine, Service, MockEvaluator
-internal/jev/           Jev client, evaluator, taxonomy mapper
+internal/jev/           Jev client, evaluator, taxonomy mapper, resilience decorator
 internal/logging/       slog setup and context logger
 internal/middleware/    request ID, client ID, access log, recovery, auth, policy resolution
+internal/metrics/        Prometheus metrics
 internal/policy/        YAML loader, validator, resolver
+internal/resilience/    circuit breaker and concurrency limiter
 policies/               default.yaml (mandatory) and example.yaml
 tests/integration/      end-to-end tests with a mocked or fake Jev
 tests/fixtures/         fixture policies
+deploy/kubernetes/      Kustomize base, components and example overlay
+scripts/smoke-test.sh   container smoke test (CI and `make smoke`)
+tools/mockjev/          development-only Jev stand-in
+.github/                CI, release and Dependabot configuration
 ```

@@ -1,5 +1,7 @@
 package guardrail
 
+import "sort"
+
 // Category is a stable, machine-readable guardrail taxonomy identifier.
 //
 // Categories are part of the public API contract: clients depend on them,
@@ -12,7 +14,7 @@ const (
 	CategoryPromptInjection      Category = "PROMPT_INJECTION"
 	CategoryJailbreak            Category = "JAILBREAK"
 	CategorySystemPromptLeak     Category = "SYSTEM_PROMPT_LEAK"
-	CategorySecretExfiltration   Category = "SECRET_EXFILTRATION"
+	CategorySecretExfiltration   Category = "SECRET_EXFILTRATION" //nolint:gosec // taxonomy identifier, not a credential
 	CategorySensitiveData        Category = "SENSITIVE_DATA"
 	CategoryMaliciousInstruction Category = "MALICIOUS_INSTRUCTION"
 	CategoryMaliciousURL         Category = "MALICIOUS_URL"
@@ -124,6 +126,16 @@ var failureMessages = map[ReasonCode]string{
 	ReasonJevUnavailable:     "The evaluation backend is unavailable.",
 	ReasonUnsupportedContent: "The content is not supported.",
 	ReasonInternalError:      "Guardrail evaluation could not be completed.",
+}
+
+// FailureCodes returns all failure reason codes, sorted.
+func FailureCodes() []ReasonCode {
+	out := make([]ReasonCode, 0, len(failureMessages))
+	for c := range failureMessages {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // SecurityReason returns the reason code for a security category.

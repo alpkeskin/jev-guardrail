@@ -17,16 +17,31 @@ import (
 	"github.com/alpkeskin/jev-guardrail/internal/guardrail"
 )
 
-const maxResponseBytes = 1 << 20
+const (
+	maxResponseBytes   = 1 << 20
+	healthConnHeadroom = 2
+)
+
+// DefaultAuthHeader is the header carrying the Jev API key by default.
+const DefaultAuthHeader = "Authorization"
 
 // ClientConfig configures the Jev HTTP client.
 type ClientConfig struct {
-	BaseURL      string
-	APIKey       string
+	BaseURL string
+	// APIKey is required. It is sent as "<AuthHeader>: <AuthScheme> <APIKey>"
+	// (or just the key when AuthScheme is empty).
+	APIKey string
+	// AuthHeader defaults to "Authorization".
+	AuthHeader string
+	// AuthScheme is e.g. "Bearer". Empty sends the bare key.
+	AuthScheme   string
 	Timeout      time.Duration
 	EvaluatePath string
 	// HealthPath is used for readiness checks; empty disables them.
 	HealthPath string
+	// MaxConns caps connections to Jev (default 100). Align it with the
+	// concurrency limit so requests never queue inside the transport.
+	MaxConns   int
 	HTTPClient *http.Client
 }
 
@@ -35,7 +50,8 @@ type ClientConfig struct {
 // JEV_ERROR or INTERNAL_ERROR.
 type Client struct {
 	base       *url.URL
-	apiKey     string
+	authHeader string
+	authValue  string
 	timeout    time.Duration
 	evalPath   string
 	healthPath string
@@ -51,8 +67,34 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	if cfg.Timeout <= 0 {
 		return nil, errors.New("jev timeout must be positive")
 	}
+	if cfg.AuthHeader == "" {
+		cfg.AuthHeader = DefaultAuthHeader
+	}
+	if !validHeaderName(cfg.AuthHeader) {
+		return nil, fmt.Errorf("invalid jev auth header name %q", cfg.AuthHeader)
+	}
+	switch http.CanonicalHeaderKey(cfg.AuthHeader) {
+	case "Host", "Content-Type", "Content-Length", "Accept", "X-Request-Id", "Transfer-Encoding", "Connection":
+		return nil, fmt.Errorf("jev auth header %q is reserved", cfg.AuthHeader)
+	}
+	if cfg.APIKey == "" {
+		return nil, errors.New("jev api key is required")
+	}
+	if !validHeaderToken(cfg.APIKey) {
+		return nil, errors.New("jev api key must not contain whitespace or control characters")
+	}
+	if cfg.AuthScheme != "" && !validHeaderName(cfg.AuthScheme) {
+		return nil, fmt.Errorf("invalid jev auth scheme %q", cfg.AuthScheme)
+	}
+	authValue := cfg.APIKey
+	if cfg.AuthScheme != "" {
+		authValue = cfg.AuthScheme + " " + cfg.APIKey
+	}
 	if cfg.EvaluatePath == "" {
 		cfg.EvaluatePath = "/v1/evaluate"
+	}
+	if cfg.MaxConns <= 0 {
+		cfg.MaxConns = 100
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
@@ -63,15 +105,20 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 			Transport: &http.Transport{
 				Proxy:               http.ProxyFromEnvironment,
 				DialContext:         (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100,
+				MaxIdleConns:        cfg.MaxConns,
+				MaxIdleConnsPerHost: cfg.MaxConns,
+				// Headroom beyond the evaluation concurrency limit keeps
+				// health checks from queueing behind saturated evaluations.
+				MaxConnsPerHost:     cfg.MaxConns + healthConnHeadroom,
+				ForceAttemptHTTP2:   true,
 				IdleConnTimeout:     90 * time.Second,
 				TLSHandshakeTimeout: 2 * time.Second,
 			}}
 	}
 	return &Client{
 		base:       u,
-		apiKey:     cfg.APIKey,
+		authHeader: http.CanonicalHeaderKey(cfg.AuthHeader),
+		authValue:  authValue,
 		timeout:    cfg.Timeout,
 		evalPath:   cfg.EvaluatePath,
 		healthPath: cfg.HealthPath,
@@ -109,7 +156,7 @@ func (c *Client) Evaluate(ctx context.Context, req EvaluateRequest) (EvaluateRes
 	defer func() {
 		// Drain so the keep-alive connection can be reused.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBytes))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 
 	if err := classifyStatus(resp.StatusCode); err != nil {
@@ -155,9 +202,7 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 func (c *Client) setCommonHeaders(ctx context.Context, req *http.Request) {
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	req.Header.Set(c.authHeader, c.authValue)
 	if id := reqctx.RequestID(ctx); id != "" {
 		req.Header.Set("X-Request-ID", id)
 	}
@@ -178,15 +223,64 @@ func (c *Client) classifyTransportError(parent, tctx context.Context, err error)
 	return guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable, err)
 }
 
+// StatusError is a non-2xx HTTP status returned by Jev.
+type StatusError struct{ StatusCode int }
+
+func (e *StatusError) Error() string { return fmt.Sprintf("jev returned HTTP %d", e.StatusCode) }
+
+// IsRequestSpecific reports whether the status is caused by the individual
+// request (e.g. 400, 413, 422) rather than by Jev's health or our
+// configuration. Such errors must not trip the circuit breaker, otherwise a
+// single caller sending bad content could cut off every other caller.
+func (e *StatusError) IsRequestSpecific() bool {
+	c := e.StatusCode
+	return c >= 400 && c < 500 && c != http.StatusUnauthorized && c != http.StatusForbidden &&
+		c != http.StatusNotFound && c != http.StatusRequestTimeout && c != http.StatusTooManyRequests
+}
+
 func classifyStatus(code int) error {
+	se := &StatusError{StatusCode: code}
 	switch {
 	case code >= 200 && code <= 299:
 		return nil
 	case code == http.StatusGatewayTimeout || code == http.StatusRequestTimeout:
-		return guardrail.NewEvaluationError(guardrail.ReasonJevTimeout, fmt.Errorf("jev returned HTTP %d", code))
+		return guardrail.NewEvaluationError(guardrail.ReasonJevTimeout, se)
 	case code == http.StatusServiceUnavailable || code == http.StatusBadGateway || code == http.StatusTooManyRequests:
-		return guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable, fmt.Errorf("jev returned HTTP %d", code))
+		return guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable, se)
 	default:
-		return guardrail.NewEvaluationError(guardrail.ReasonJevError, fmt.Errorf("jev returned HTTP %d", code))
+		return guardrail.NewEvaluationError(guardrail.ReasonJevError, se)
 	}
+}
+
+// validHeaderName reports whether s is an RFC 9110 token.
+func validHeaderName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !isTokenChar(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func isTokenChar(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	default:
+		return strings.ContainsRune("!#$%&'*+-.^_`|~", r)
+	}
+}
+
+// validHeaderToken rejects whitespace and control characters, which would
+// either break or allow injection into the header.
+func validHeaderToken(s string) bool {
+	for _, r := range s {
+		if r <= ' ' || r == 0x7f || r > 0x7e {
+			return false
+		}
+	}
+	return true
 }

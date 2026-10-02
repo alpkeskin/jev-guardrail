@@ -73,6 +73,11 @@ const (
 // DefaultContentType is used when the caller does not specify one.
 const DefaultContentType = ContentText
 
+// ContentTypes returns all supported content types.
+func ContentTypes() []ContentType {
+	return []ContentType{ContentPrompt, ContentResponse, ContentToolInput, ContentToolOutput, ContentDocument, ContentText}
+}
+
 // Valid reports whether t is a supported content type.
 func (t ContentType) Valid() bool {
 	switch t {

@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jev-guardrail
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 25%
+  selector:
+    matchLabels: {}
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: jev-guardrail
+      automountServiceAccountToken: false
+      # Must exceed GUARDRAIL_SHUTDOWN_DELAY + GUARDRAIL_SHUTDOWN_TIMEOUT.
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: jev-guardrail
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: jev-guardrail
+      containers:
+        - name: guardrail
+          # Overlays must pin a version or digest (enforced by make k8s-validate).
+          image: ghcr.io/alpkeskin/jev-guardrail
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: jev-guardrail-config
+          env:
+            - name: GUARDRAIL_ADDR
+              value: ":8080"
+            - name: GUARDRAIL_METRICS_ADDR
+              value: ":9090"
+            - name: GUARDRAIL_POLICY_DIR
+              value: /app/policies
+            # Secrets are read from files, never from environment values.
+            - name: JEV_API_KEY_FILE
+              value: /var/run/secrets/jev-guardrail/jev-api-key
+            - name: GUARDRAIL_API_KEYS_FILE
+              value: /var/run/secrets/jev-guardrail/gateway-api-keys
+            # Size the Go runtime to the container limits.
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+                  divisor: "1"
+            - name: GOMEMLIMIT
+              value: 230MiB # ~90% of limits.memory
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: policies
+              mountPath: /app/policies
+              readOnly: true
+            - name: secrets
+              mountPath: /var/run/secrets/jev-guardrail
+              readOnly: true
+      volumes:
+        - name: policies
+          configMap:
+            name: jev-guardrail-policies
+        - name: secrets
+          secret:
+            # Create from your secret manager (e.g. External Secrets);
+            # see deploy/kubernetes/README.md. Never commit it.
+            secretName: jev-guardrail-secrets
+            defaultMode: 0440

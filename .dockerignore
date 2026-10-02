@@ -1,0 +1,11 @@
+.git
+.github
+bin
+deploy
+tests
+tools
+**/*_test.go
+*.md
+!README.md
+coverage.*
+.env

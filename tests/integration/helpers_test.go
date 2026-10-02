@@ -20,6 +20,7 @@ import (
 	reqctx "github.com/alpkeskin/jev-guardrail/internal/context"
 	"github.com/alpkeskin/jev-guardrail/internal/guardrail"
 	"github.com/alpkeskin/jev-guardrail/internal/jev"
+	"github.com/alpkeskin/jev-guardrail/internal/metrics"
 	"github.com/alpkeskin/jev-guardrail/internal/policy"
 )
 
@@ -66,8 +67,18 @@ func (b *syncBuffer) String() string {
 }
 
 type harness struct {
-	server *httptest.Server
-	logs   *syncBuffer
+	server  *httptest.Server
+	logs    *syncBuffer
+	metrics *metrics.Metrics
+	handler *api.Handler
+}
+
+// scrape returns the Prometheus exposition text.
+func (h *harness) scrape(t *testing.T) string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	h.metrics.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	return w.Body.String()
 }
 
 func newHarness(t *testing.T, ev guardrail.Evaluator) *harness {
@@ -83,13 +94,14 @@ func newHarness(t *testing.T, ev guardrail.Evaluator) *harness {
 	logs := &syncBuffer{}
 	logger := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	svc := guardrail.NewService(ev, guardrail.ThresholdEngine{})
+	m := metrics.New("test", "abc123")
+	svc := guardrail.NewService(ev, guardrail.ThresholdEngine{}, guardrail.WithObserver(m))
 	handler := api.NewHandler(svc, 4096, []api.ReadinessCheck{{Name: "evaluator", Check: svc.Ready}})
 	srv := httptest.NewServer(api.NewRouter(api.RouterConfig{
-		Logger: logger, Handler: handler, Authenticator: keys, Resolver: store,
+		Logger: logger, Handler: handler, Authenticator: keys, Resolver: store, Observer: m,
 	}))
 	t.Cleanup(srv.Close)
-	return &harness{server: srv, logs: logs}
+	return &harness{server: srv, logs: logs, metrics: m, handler: handler}
 }
 
 type result struct {
@@ -163,7 +175,7 @@ func newFakeJev(t *testing.T, scores map[string]float64, delay time.Duration, st
 
 func newJevEvaluator(t *testing.T, url string, timeout time.Duration) *jev.Evaluator {
 	t.Helper()
-	c, err := jev.NewClient(jev.ClientConfig{BaseURL: url, Timeout: timeout, HealthPath: "/health"})
+	c, err := jev.NewClient(jev.ClientConfig{BaseURL: url, APIKey: "jev-test-key", Timeout: timeout, HealthPath: "/health"})
 	if err != nil {
 		t.Fatal(err)
 	}

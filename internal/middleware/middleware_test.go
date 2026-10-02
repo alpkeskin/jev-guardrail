@@ -60,7 +60,8 @@ func TestRequestID(t *testing.T) {
 }
 
 func TestNewRequestIDUnique(t *testing.T) {
-	if NewRequestID() == NewRequestID() {
+	a, b := NewRequestID(), NewRequestID()
+	if a == b {
 		t.Fatal("request ids must be unique")
 	}
 }
@@ -115,7 +116,7 @@ func TestRecoverAfterResponseStartedAborts(t *testing.T) {
 			panic("boom")
 		}))
 	defer func() {
-		if rec := recover(); rec != http.ErrAbortHandler {
+		if rec := recover(); rec != http.ErrAbortHandler { //nolint:errorlint // panic values are compared by identity
 			t.Fatalf("recover = %v, want http.ErrAbortHandler", rec)
 		}
 		if called {
