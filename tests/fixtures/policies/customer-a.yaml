@@ -1,0 +1,15 @@
+version: "1"
+client_id: customer-a
+rules:
+  prompt_injection:
+    enabled: true
+    threshold: 0.80
+    action: block
+  jailbreak:
+    enabled: true
+    threshold: 0.85
+    action: block
+  sensitive_data:
+    enabled: true
+    threshold: 0.90
+    action: review
