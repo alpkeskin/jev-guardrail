@@ -104,7 +104,7 @@ func run(c config) error {
 	if err := os.MkdirAll(filepath.Dir(c.out), 0o750); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(c.out, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // operator-provided path
+	f, err := os.OpenFile(c.out, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,9 @@ type guardRequest struct {
 func send(client *http.Client, c config, s bench.Sample) bench.Result {
 	r := bench.Result{ID: s.ID}
 	body, _ := json.Marshal(guardRequest{Content: s.Content, ContentType: s.ContentType})
-	req, err := http.NewRequest(http.MethodPost, c.url+"/v1/guard", bytes.NewReader(body))
+	// Not tied to the run context: on interrupt, in-flight requests finish
+	// (bounded by the client timeout) so their results are kept.
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.url+"/v1/guard", bytes.NewReader(body))
 	if err != nil {
 		r.Error = err.Error()
 		return r

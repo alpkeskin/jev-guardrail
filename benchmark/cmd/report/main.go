@@ -291,13 +291,12 @@ type accReport struct {
 }
 
 type group struct {
-	Name     string `json:"name"`
-	Label    string `json:"label,omitempty"`
-	N        int    `json:"n"`
-	Blocked  rate   `json:"blocked"`
-	Correct  rate   `json:"correct"`
-	Attrib   *rate  `json:"attribution,omitempty"`
-	expected bool
+	Name    string `json:"name"`
+	Label   string `json:"label,omitempty"`
+	N       int    `json:"n"`
+	Blocked rate   `json:"blocked"`
+	Correct rate   `json:"correct"`
+	Attrib  *rate  `json:"attribution,omitempty"`
 }
 
 type example struct {
@@ -329,7 +328,6 @@ func decide(pol guardrail.Policy, scores map[guardrail.Category]float64) guardra
 
 type tally struct {
 	n, blocked, correct, attribOK, attribN int
-	label                                  string
 	labels                                 map[string]bool
 }
 

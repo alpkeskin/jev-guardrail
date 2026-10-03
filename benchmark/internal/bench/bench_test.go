@@ -11,10 +11,11 @@ func TestSplitIsDeterministicAndProportional(t *testing.T) {
 	const n = 100000
 	for i := 0; i < n; i++ {
 		id := fmt.Sprintf("s%06d", i)
-		if SplitOf(id) != SplitOf(id) {
+		first, second := SplitOf(id), SplitOf(id)
+		if first != second {
 			t.Fatal("split must be deterministic")
 		}
-		if SplitOf(id) == SplitCalibration {
+		if first == SplitCalibration {
 			calib++
 		}
 	}
