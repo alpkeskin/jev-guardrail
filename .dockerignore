@@ -9,3 +9,4 @@ tools
 !README.md
 coverage.*
 .env
+docs
