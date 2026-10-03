@@ -14,17 +14,17 @@ rules:
 
   prompt_injection:
     enabled: true
-    threshold: 0.80
+    threshold: 0.30
     action: block
 
   jailbreak:
     enabled: true
-    threshold: 0.85
+    threshold: 0.30
     action: block
 
   system_prompt_extraction:
     enabled: true
-    threshold: 0.80
+    threshold: 0.43
     action: block
 
   sensitive_data:
@@ -34,5 +34,5 @@ rules:
 
   malicious_url:
     enabled: false
-    threshold: 0.90
+    threshold: 0.45
     action: block

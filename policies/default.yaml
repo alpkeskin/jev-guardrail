@@ -1,5 +1,11 @@
 # Mandatory default policy. Used when X-Client-ID is missing or unknown.
 # The service refuses to start if this file is missing or invalid.
+#
+# Thresholds are tuned on Jev (jev-1.13.0) with the benchmark in
+# benchmark/: a 1% combined false positive budget on benign content, no
+# threshold below 0.30, chosen on the calibration split and reported on
+# the held-out test split (see the README "Benchmark" section). Re-tune
+# with benchmark/cmd/tune after changing models or questions.
 version: "1"
 
 client_id: default
@@ -8,30 +14,30 @@ rules:
 
   prompt_injection:
     enabled: true
-    threshold: 0.80
+    threshold: 0.30
     action: block
 
   jailbreak:
     enabled: true
-    threshold: 0.85
+    threshold: 0.30
     action: block
 
   system_prompt_extraction:
     enabled: true
-    threshold: 0.80
+    threshold: 0.43
     action: block
 
   secret_exfiltration:
     enabled: true
-    threshold: 0.80
+    threshold: 0.85
     action: block
 
   sensitive_data:
     enabled: true
-    threshold: 0.90
+    threshold: 0.97
     action: block
 
   malicious_instruction:
     enabled: true
-    threshold: 0.85
+    threshold: 0.76
     action: block
