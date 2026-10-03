@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Base images are overridable so builds can use an internal registry mirror.
-ARG GO_IMAGE=golang:1.24-alpine
+ARG GO_IMAGE=golang:1.27-alpine
 ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot
 
 # Cross-compile on the build platform for fast multi-arch builds.
