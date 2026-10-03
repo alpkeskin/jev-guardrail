@@ -18,4 +18,4 @@ Only the latest release receives security fixes.
 
 - `X-Client-ID` selects a policy. It is not an authentication mechanism.
 - Request content is never logged by design.
-- `tools/mockjev` is for development only. Never deploy it.
+- `tests/mockjev` is for development only. Never deploy it.

@@ -133,5 +133,5 @@ owns the decision, and `auth.Authenticator` owns caller identity.
 `guardrail.MockEvaluator` provides deterministic `PASSED`, `BLOCKED` and
 `FAILED` scenarios for tests.
 
-`tools/mockjev` is a development-only stand-in for the System One API with
+`tests/mockjev` is a development-only stand-in for the System One API with
 keyword scoring. Never deploy it.

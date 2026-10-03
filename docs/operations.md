@@ -87,8 +87,11 @@ also carry `caller` and `policy_id`. The completion log records `judgment`,
   * re-runs the verification
   * builds `linux/amd64` and `linux/arm64` images
   * pushes them to `ghcr.io/alpkeskin/jev-guardrail` with an SBOM and
-    max-mode provenance attestations
+    max-mode provenance attestations, tagged `X.Y.Z`, `X.Y`, `X` and
+    `latest` (pre-releases get only `X.Y.Z`)
   * signs them keylessly with cosign
+  * creates a GitHub release with generated notes, standalone binaries
+    (linux, macOS, windows; bundled with `policies/`) and `checksums.txt`
 * All third-party actions are pinned to commit SHAs. Dependabot keeps Go
   modules, actions and base images up to date.
 * `make check` runs the CI checks locally. `make smoke` builds the image
