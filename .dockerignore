@@ -10,3 +10,4 @@ tools
 coverage.*
 .env
 docs
+benchmark
