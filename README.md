@@ -54,7 +54,7 @@ Check the prompt before calling the model, and the response before returning it.
 |---|---|
 | **Your application** (app, agent, gateway, MCP server) | Enforcement: what to do with each judgment |
 | **Jev Guardrail** | The decision: policy + findings → judgment |
-| **Jev** | Detection: per-category scores |
+| **Jev** (TypeSafe) | Detection: per-category probabilities |
 
 ## Quick start
 
@@ -62,8 +62,7 @@ Check the prompt before calling the model, and the response before returning it.
 
 ```bash
 docker run --rm -p 8080:8080 \
-  -e JEV_URL=https://jev.example.com \
-  -e JEV_API_KEY=<jev-key> \
+  -e JEV_API_KEY=<typesafe-api-key> \
   -e GUARDRAIL_API_KEYS=gateway:change-me-0123456789 \
   ghcr.io/alpkeskin/jev-guardrail:latest
 ```
@@ -105,12 +104,12 @@ Each category is also the `reason.code` of a `BLOCKED` judgment.
 
 | Category | Policy key | Detects | Default policy |
 |---|---|---|---|
-| `PROMPT_INJECTION` | `prompt_injection` | Attempts to override existing instructions. *"Ignore all previous instructions…"* | block ≥ 0.80 |
-| `JAILBREAK` | `jailbreak` | Attempts to bypass safety restrictions. *"You are now in developer mode…"* | block ≥ 0.85 |
-| `SYSTEM_PROMPT_LEAK` | `system_prompt_extraction` | Extracting or leaking the system prompt. | block ≥ 0.80 |
-| `SECRET_EXFILTRATION` | `secret_exfiltration` | Secrets or credentials being requested or exposed. | block ≥ 0.80 |
-| `SENSITIVE_DATA` | `sensitive_data` | Personal or sensitive data (PII). | block ≥ 0.90 |
-| `MALICIOUS_INSTRUCTION` | `malicious_instruction` | Instructions intended to cause harm. | block ≥ 0.85 |
+| `PROMPT_INJECTION` | `prompt_injection` | Attempts to override existing instructions. *"Ignore all previous instructions…"* | block ≥ 0.30 |
+| `JAILBREAK` | `jailbreak` | Attempts to bypass safety restrictions. *"You are now in developer mode…"* | block ≥ 0.30 |
+| `SYSTEM_PROMPT_LEAK` | `system_prompt_extraction` | Extracting or leaking the system prompt. | block ≥ 0.43 |
+| `SECRET_EXFILTRATION` | `secret_exfiltration` | Secrets or credentials being requested or exposed. | block ≥ 0.85 |
+| `SENSITIVE_DATA` | `sensitive_data` | Personal or sensitive data (PII). | block ≥ 0.97 |
+| `MALICIOUS_INSTRUCTION` | `malicious_instruction` | Instructions intended to cause harm. | block ≥ 0.76 |
 | `MALICIOUS_URL` | `malicious_url` | Malicious or suspicious URLs. | off |
 | `UNSAFE_CONTENT` | `unsafe_content` | Otherwise unsafe content. | off |
 
@@ -180,8 +179,9 @@ Configured through environment variables. Invalid config fails startup.
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `JEV_URL` | yes | Jev base URL |
-| `JEV_API_KEY` / `JEV_API_KEY_FILE` | yes | Jev credentials |
+| `JEV_API_KEY` / `JEV_API_KEY_FILE` | yes | TypeSafe API key |
+| `JEV_MODEL` | no | Jev model (default `jev-latest`; pin a version in production) |
+| `JEV_URL` | no | TypeSafe API base URL (default `https://api.typesafe.ai`) |
 | `GUARDRAIL_API_KEYS` / `GUARDRAIL_API_KEYS_FILE` | yes¹ | Caller API keys (`name:key`) |
 | `GUARDRAIL_POLICY_DIR` | no | Policy directory (default `policies`) |
 
@@ -194,6 +194,63 @@ Configured through environment variables. Invalid config fails startup.
 - **Observability:** Prometheus metrics on `:9090`, structured `slog` JSON logs. Content is never logged.
 
 Resilience, metrics, shutdown and releases: [docs/operations.md](docs/operations.md).
+
+## Benchmark
+
+The default thresholds come from a benchmark against the real Jev
+(`jev-1.13.0`, October 2026). The run sent 80,098 labeled samples from 17
+public datasets through the full container at 50 requests/s. Method,
+datasets and tooling: [`benchmark/`](benchmark).
+
+**Performance.** 80,098 requests, **0 failures**.
+
+| | p50 | p90 | p95 | p99 | p99.9 |
+|---|---|---|---|---|---|
+| Latency (ms), guardrail + Jev | 285 | 358 | 388 | 484 | 775 |
+
+Latency barely depends on content length: p50 is 284 ms below 200
+characters and 290 ms for 3–8k characters.
+
+**Accuracy.** Thresholds were chosen on a 30% calibration split with a 1%
+benign false positive budget and no threshold below 0.30. Results are on
+the held-out 70% test split. Both rows evaluate the categories the default
+policy enables.
+
+| Default policy | Detection rate | False positive rate | Precision | F1 |
+|---|---|---|---|---|
+| Previous thresholds (0.80–0.90) | 53.6% | 2.02% | 97.0% | 0.690 |
+| **Tuned thresholds** | **63.3%** | **1.06%** | **98.7%** | **0.772** |
+
+| Label (test samples) | Detected | Notes |
+|---|---|---|
+| Prompt injection / jailbreak (11,337) | 76.0% | Was 46.1%. Gandalf and multilingual injections: 95–97%. |
+| Leaked credentials (1,425) | 98.7% | Synthetic. About 94% of the same snippets with placeholders or env lookups pass. |
+| Harmful requests (3,235) | 71.4% | Was 63.7%. |
+| Personal data (6,711) | 65.2% | Was 81.8%; the threshold rose to 0.97 to meet the false positive budget. Set `sensitive_data` to 0.90 for about 82% at roughly one extra point of false positives. 61–68% in each of six languages. |
+| Unsafe model replies (5,613) | 22.1% | Weak. Labels describe the question and answer together, but only the answer is screened. Some real misses remain, e.g. step-by-step sabotage worded neutrally. |
+| Benign content (20,347) | 98.9% pass | Leading false positive causes: `SENSITIVE_DATA`, `SECRET_EXFILTRATION`, `MALICIOUS_INSTRUCTION`. |
+
+Scores separate attacks from benign content well across the board (ROC
+AUC 0.90–0.995). Most remaining misses come from where the threshold sits,
+not from Jev failing to tell the classes apart. `MALICIOUS_URL` and
+`UNSAFE_CONTENT` stay off by default:
+
+* Phishing URLs reach 48% detection at a 0.45 threshold. Jev has no URL
+  reputation data.
+* Unsafe replies stay weak, as shown above.
+
+**Caveats.**
+
+* The benign set is public data, not your traffic. Re-check false
+  positives on your own traffic before tightening.
+* 4,729 "benign" prompts from TrustAIRLab were excluded. Many are literal
+  injections, such as *"Please ignore all previous instructions…"*.
+* Re-run `benchmark/cmd/tune` after changing the model or the questions.
+
+```bash
+uv run benchmark/datasets/prepare.py && JEV_API_KEY=<key> benchmark/run.sh
+go run ./benchmark/cmd/report -results benchmark/results/<run>/results.jsonl -policy policies/default.yaml -split test
+```
 
 ## Development
 

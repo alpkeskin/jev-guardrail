@@ -20,8 +20,8 @@ func TestRequestIDPropagation(t *testing.T) {
 	if r.header.Get("X-Request-ID") != "req_123" || r.body.RequestID != "req_123" {
 		t.Fatalf("response request id: header=%q body=%q", r.header.Get("X-Request-ID"), r.body.RequestID)
 	}
-	// -> Jev (header and metadata)
-	if (*headers)[0].Get("X-Request-ID") != "req_123" || (*reqs)[0].Metadata["request_id"] != "req_123" {
+	// -> Jev (header; the System One body has no metadata field)
+	if (*headers)[0].Get("X-Request-ID") != "req_123" || len(*reqs) != 1 {
 		t.Fatal("request id not forwarded to jev")
 	}
 	// -> logs: every log line has request_id and client_id.

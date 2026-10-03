@@ -1,27 +1,51 @@
-// Package jev adapts the Jev detection service to the guardrail.Evaluator
-// interface. Jev wire types never leave this package: results are mapped
-// into the service's own taxonomy by mapper.go.
+// Package jev adapts TypeSafe's Jev model (the System One API) to the
+// guardrail.Evaluator interface. Jev wire types never leave this package:
+// answers are mapped into the service's own taxonomy by questions.go.
 package jev
 
-// EvaluateRequest is the Jev evaluation request body.
-type EvaluateRequest struct {
-	Input     string            `json:"input"`
-	InputType string            `json:"input_type,omitempty"`
-	Detectors []string          `json:"detectors"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
+// SystemOneRequest is the body of POST /v1/systemone.
+type SystemOneRequest struct {
+	State     State               `json:"state"`
+	Model     string              `json:"model"`
+	Questions map[string]Question `json:"questions"`
 }
 
-// EvaluateResponse is the Jev evaluation response body.
-type EvaluateResponse struct {
-	Results []DetectorResult `json:"results"`
+// State is the content Jev judges. Keeping the screened text in a named
+// field lets every question refer to it unambiguously as `content`, and
+// Source tells the model where the text came from.
+type State struct {
+	Source  string `json:"source"`
+	Content string `json:"content"`
 }
 
-// DetectorResult is one Jev detector's output.
-type DetectorResult struct {
-	Detector string   `json:"detector"`
-	Score    *float64 `json:"score"`
-	// Label and Explanation are Jev-internal and intentionally never
-	// propagated to the public API or logs.
-	Label       string `json:"label,omitempty"`
-	Explanation string `json:"explanation,omitempty"`
+// Question is one typed System One question. Only Nouls are used: each
+// category is an independent yes/no judgment whose probability is the
+// finding score.
+type Question struct {
+	Type         string        `json:"type"`
+	Instructions string        `json:"instructions"`
+	Criteria     *NoulCriteria `json:"criteria,omitempty"`
 }
+
+// NoulCriteria describes what a yes and a no mean for a Noul.
+type NoulCriteria struct {
+	True  string `json:"true"`
+	False string `json:"false"`
+}
+
+// SystemOneResponse is the System One response body.
+type SystemOneResponse struct {
+	// Model is the resolved model version (e.g. "jev-1.13.0" for
+	// "jev-latest").
+	Model   string            `json:"model"`
+	Answers map[string]Answer `json:"answers"`
+}
+
+// Answer is one question's answer. Other answer fields (probabilities,
+// confidence, legend) are not needed for Nouls and are ignored.
+type Answer struct {
+	Type string   `json:"type"`
+	Noul *float64 `json:"noul"`
+}
+
+const questionTypeNoul = "noul"

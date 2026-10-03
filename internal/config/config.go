@@ -28,6 +28,7 @@ type Config struct {
 	JevAuthScheme   string
 	JevTimeout      time.Duration
 	JevEvaluatePath string
+	JevModel        string
 	JevHealthPath   string // empty disables Jev health checks
 
 	JevMaxConcurrency      int
@@ -148,12 +149,15 @@ func Load(getenv func(string) string) (Config, error) {
 		AuthDisabled: l.boolean("GUARDRAIL_AUTH_DISABLED", false),
 		APIKeys:      strings.TrimSpace(getenv("GUARDRAIL_API_KEYS")),
 
-		JevURL:          l.str("JEV_URL", ""),
+		JevURL:          l.str("JEV_URL", "https://api.typesafe.ai"),
 		JevAPIKey:       l.secret("JEV_API_KEY"),
 		JevAuthHeader:   l.str("JEV_AUTH_HEADER", "Authorization"),
 		JevTimeout:      l.duration("JEV_TIMEOUT", 5*time.Second, false),
-		JevEvaluatePath: l.str("JEV_EVALUATE_PATH", "/v1/evaluate"),
-		JevHealthPath:   l.optional("JEV_HEALTH_PATH", "/health"),
+		JevEvaluatePath: l.str("JEV_EVALUATE_PATH", "/v1/systemone"),
+		JevModel:        l.str("JEV_MODEL", "jev-latest"),
+		// TypeSafe documents no health endpoint, so health checks are off
+		// unless a path is configured.
+		JevHealthPath: l.optional("JEV_HEALTH_PATH", ""),
 
 		JevMaxConcurrency:      int(l.integer("JEV_MAX_CONCURRENCY", 100, 1)),
 		JevQueueTimeout:        l.duration("JEV_QUEUE_TIMEOUT", 250*time.Millisecond, true),
@@ -201,9 +205,6 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	if c.JevURL == "" {
-		l.fail("JEV_URL is required")
-	}
 	if c.AuthDisabled && c.APIKeys != "" {
 		// Refuse ambiguous configuration rather than silently ignoring keys.
 		l.fail("GUARDRAIL_AUTH_DISABLED=true conflicts with configured API keys")

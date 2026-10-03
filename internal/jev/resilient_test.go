@@ -54,7 +54,7 @@ func statusServer(t *testing.T, status *atomic.Int32, hits *atomic.Int32) *httpt
 			w.WriteHeader(int(s))
 			return
 		}
-		_, _ = w.Write([]byte(`{"results":[{"detector":"jailbreak","score":0.1}]}`))
+		_, _ = w.Write([]byte(`{"answers":{"jailbreak":{"type":"noul","noul":0.1}}}`))
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -105,7 +105,7 @@ func TestResilientRequestSpecificErrorsDoNotTrip(t *testing.T) {
 		b, _ := resilience.NewBreaker(resilience.BreakerConfig{FailureThreshold: 2, OpenTimeout: time.Minute})
 		api := NewResilientAPI(newTestClient(t, srv.URL, time.Second), b, nil, nil)
 		for i := 0; i < 5; i++ {
-			_, err := api.Evaluate(context.Background(), EvaluateRequest{Detectors: []string{"jailbreak"}})
+			_, err := api.Evaluate(context.Background(), SystemOneRequest{})
 			if guardrail.FailureCode(err) != guardrail.ReasonJevError {
 				t.Fatalf("%d: %v", code, err)
 			}
@@ -121,7 +121,7 @@ func TestResilientRequestSpecificErrorsDoNotTrip(t *testing.T) {
 	b, _ := resilience.NewBreaker(resilience.BreakerConfig{FailureThreshold: 2, OpenTimeout: time.Minute})
 	api := NewResilientAPI(newTestClient(t, srv.URL, time.Second), b, nil, nil)
 	for i := 0; i < 2; i++ {
-		_, _ = api.Evaluate(context.Background(), EvaluateRequest{})
+		_, _ = api.Evaluate(context.Background(), SystemOneRequest{})
 	}
 	if b.State() != resilience.Open {
 		t.Fatal("401 must trip the breaker")
@@ -143,7 +143,7 @@ func TestResilientCallerCancelDoesNotTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	// The caller's own deadline (shorter than the Jev timeout) expires.
-	_, err := api.Evaluate(ctx, EvaluateRequest{})
+	_, err := api.Evaluate(ctx, SystemOneRequest{})
 	if err == nil || b.State() != resilience.Closed {
 		t.Fatalf("err=%v state=%s", err, b.State())
 	}
@@ -155,7 +155,7 @@ func TestResilientConcurrencyLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		<-release
-		_, _ = w.Write([]byte(`{"results":[]}`))
+		_, _ = w.Write([]byte(`{"answers":{}}`))
 	}))
 	defer srv.Close()
 	defer close(release)
@@ -167,13 +167,13 @@ func TestResilientConcurrencyLimit(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); _, _ = api.Evaluate(context.Background(), EvaluateRequest{}) }()
+		go func() { defer wg.Done(); _, _ = api.Evaluate(context.Background(), SystemOneRequest{}) }()
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for hits.Load() < 2 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	_, err := api.Evaluate(context.Background(), EvaluateRequest{})
+	_, err := api.Evaluate(context.Background(), SystemOneRequest{})
 	if guardrail.FailureCode(err) != guardrail.ReasonJevUnavailable || obs.count(OutcomeLimitReached) != 1 {
 		t.Fatalf("err=%v outcomes=%v", err, obs.outcomes)
 	}

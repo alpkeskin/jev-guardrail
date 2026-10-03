@@ -1,0 +1,22 @@
+# Scoring policy used while a benchmark runs (X-Client-ID: benchmark).
+#
+# Every category is enabled as "review" with the lowest allowed threshold,
+# so every response carries all eight scores and the judgment is always
+# PASSED. benchmark/cmd/report then recomputes real decisions offline with
+# the production ThresholdEngine for any policy (see eval-all.yaml).
+# Never use this policy outside a benchmark.
+version: "1"
+
+client_id: benchmark
+
+description: Benchmark only. Reports every category score; never blocks.
+
+rules:
+  prompt_injection:         {enabled: true, threshold: 0.000001, action: review}
+  jailbreak:                {enabled: true, threshold: 0.000001, action: review}
+  system_prompt_extraction: {enabled: true, threshold: 0.000001, action: review}
+  secret_exfiltration:      {enabled: true, threshold: 0.000001, action: review}
+  sensitive_data:           {enabled: true, threshold: 0.000001, action: review}
+  malicious_instruction:    {enabled: true, threshold: 0.000001, action: review}
+  malicious_url:            {enabled: true, threshold: 0.000001, action: review}
+  unsafe_content:           {enabled: true, threshold: 0.000001, action: review}

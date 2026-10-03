@@ -56,7 +56,7 @@ wait_for "http://$JEV/health"
 
 docker run -d --name "$NAME" --network host --read-only --cap-drop ALL \
   --security-opt no-new-privileges \
-  -e JEV_URL="http://$JEV" -e JEV_API_KEY="$JEV_KEY" \
+  -e JEV_URL="http://$JEV" -e JEV_API_KEY="$JEV_KEY" -e JEV_HEALTH_PATH=/health \
   -e GUARDRAIL_API_KEYS="smoke:$GW_KEY" \
   -e GUARDRAIL_ADDR="$API" -e GUARDRAIL_METRICS_ADDR="$METRICS" \
   -e GUARDRAIL_SHUTDOWN_DELAY=2s -e JEV_CIRCUIT_BREAKER_THRESHOLD=3 \

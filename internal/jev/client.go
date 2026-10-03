@@ -22,8 +22,15 @@ const (
 	healthConnHeadroom = 2
 )
 
-// DefaultAuthHeader is the header carrying the Jev API key by default.
-const DefaultAuthHeader = "Authorization"
+// Defaults for TypeSafe's hosted System One API.
+const (
+	DefaultAuthHeader   = "Authorization"
+	DefaultEvaluatePath = "/v1/systemone"
+	DefaultModel        = "jev-latest"
+)
+
+// statusOverloaded is TypeSafe's non-standard "529 Overloaded" status.
+const statusOverloaded = 529
 
 // ClientConfig configures the Jev HTTP client.
 type ClientConfig struct {
@@ -37,6 +44,10 @@ type ClientConfig struct {
 	AuthScheme   string
 	Timeout      time.Duration
 	EvaluatePath string
+	// Model is the Jev model sent with every request (default
+	// "jev-latest"). Pin a version such as "jev-1.13.0" in production so
+	// scores do not shift under fixed policy thresholds.
+	Model string
 	// HealthPath is used for readiness checks; empty disables them.
 	HealthPath string
 	// MaxConns caps connections to Jev (default 100). Align it with the
@@ -54,6 +65,7 @@ type Client struct {
 	authValue  string
 	timeout    time.Duration
 	evalPath   string
+	model      string
 	healthPath string
 	http       *http.Client
 }
@@ -91,7 +103,10 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		authValue = cfg.AuthScheme + " " + cfg.APIKey
 	}
 	if cfg.EvaluatePath == "" {
-		cfg.EvaluatePath = "/v1/evaluate"
+		cfg.EvaluatePath = DefaultEvaluatePath
+	}
+	if cfg.Model == "" {
+		cfg.Model = DefaultModel
 	}
 	if cfg.MaxConns <= 0 {
 		cfg.MaxConns = 100
@@ -121,6 +136,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		authValue:  authValue,
 		timeout:    cfg.Timeout,
 		evalPath:   cfg.EvaluatePath,
+		model:      cfg.Model,
 		healthPath: cfg.HealthPath,
 		http:       hc,
 	}, nil
@@ -130,12 +146,13 @@ func (c *Client) endpoint(path string) string {
 	return strings.TrimRight(c.base.String(), "/") + "/" + strings.TrimLeft(path, "/")
 }
 
-// Evaluate sends an evaluation request to Jev. The request ID from ctx is
-// forwarded in the X-Request-ID header.
-func (c *Client) Evaluate(ctx context.Context, req EvaluateRequest) (EvaluateResponse, error) {
+// Evaluate sends a System One request to Jev using the configured model.
+// The request ID from ctx is forwarded in the X-Request-ID header.
+func (c *Client) Evaluate(ctx context.Context, req SystemOneRequest) (SystemOneResponse, error) {
+	req.Model = c.model
 	body, err := json.Marshal(req)
 	if err != nil {
-		return EvaluateResponse{}, guardrail.NewEvaluationError(guardrail.ReasonInternalError, err)
+		return SystemOneResponse{}, guardrail.NewEvaluationError(guardrail.ReasonInternalError, err)
 	}
 
 	tctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -143,7 +160,7 @@ func (c *Client) Evaluate(ctx context.Context, req EvaluateRequest) (EvaluateRes
 
 	httpReq, err := http.NewRequestWithContext(tctx, http.MethodPost, c.endpoint(c.evalPath), bytes.NewReader(body))
 	if err != nil {
-		return EvaluateResponse{}, guardrail.NewEvaluationError(guardrail.ReasonInternalError, err)
+		return SystemOneResponse{}, guardrail.NewEvaluationError(guardrail.ReasonInternalError, err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
@@ -151,7 +168,7 @@ func (c *Client) Evaluate(ctx context.Context, req EvaluateRequest) (EvaluateRes
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return EvaluateResponse{}, c.classifyTransportError(ctx, tctx, err)
+		return SystemOneResponse{}, c.classifyTransportError(ctx, tctx, err)
 	}
 	defer func() {
 		// Drain so the keep-alive connection can be reused.
@@ -160,24 +177,26 @@ func (c *Client) Evaluate(ctx context.Context, req EvaluateRequest) (EvaluateRes
 	}()
 
 	if err := classifyStatus(resp.StatusCode); err != nil {
-		return EvaluateResponse{}, err
+		return SystemOneResponse{}, err
 	}
 
-	var out EvaluateResponse
+	var out SystemOneResponse
 	dec := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
 	if err := dec.Decode(&out); err != nil {
 		if tctx.Err() != nil {
-			return EvaluateResponse{}, c.classifyTransportError(ctx, tctx, err)
+			return SystemOneResponse{}, c.classifyTransportError(ctx, tctx, err)
 		}
-		return EvaluateResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevError, fmt.Errorf("decode response: %w", err))
+		return SystemOneResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevError, fmt.Errorf("decode response: %w", err))
 	}
-	if out.Results == nil {
-		return EvaluateResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevError, errors.New("response has no results field"))
+	if out.Answers == nil {
+		return SystemOneResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevError, errors.New("response has no answers field"))
 	}
 	return out, nil
 }
 
-// Ping checks Jev's health endpoint. It never runs an evaluation.
+// Ping checks Jev's health endpoint. It never runs an evaluation. TypeSafe
+// documents no health endpoint, so with the default configuration Ping is
+// a no-op.
 func (c *Client) Ping(ctx context.Context) error {
 	if c.healthPath == "" {
 		return nil
@@ -245,7 +264,8 @@ func classifyStatus(code int) error {
 		return nil
 	case code == http.StatusGatewayTimeout || code == http.StatusRequestTimeout:
 		return guardrail.NewEvaluationError(guardrail.ReasonJevTimeout, se)
-	case code == http.StatusServiceUnavailable || code == http.StatusBadGateway || code == http.StatusTooManyRequests:
+	case code == http.StatusServiceUnavailable || code == http.StatusBadGateway ||
+		code == http.StatusTooManyRequests || code == statusOverloaded:
 		return guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable, se)
 	default:
 		return guardrail.NewEvaluationError(guardrail.ReasonJevError, se)

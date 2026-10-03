@@ -87,6 +87,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	logger.Info("jev configured", slog.String("url", cfg.JevURL), slog.String("model", cfg.JevModel))
 	service := guardrail.NewService(evaluator, guardrail.ThresholdEngine{}, guardrail.WithObserver(m))
 
 	checks := []api.ReadinessCheck{
@@ -196,6 +197,7 @@ func newJevEvaluator(cfg config.Config, logger *slog.Logger, m *metrics.Metrics)
 		AuthScheme:   cfg.JevAuthScheme,
 		Timeout:      cfg.JevTimeout,
 		EvaluatePath: cfg.JevEvaluatePath,
+		Model:        cfg.JevModel,
 		HealthPath:   cfg.JevHealthPath,
 		MaxConns:     cfg.JevMaxConcurrency,
 	})

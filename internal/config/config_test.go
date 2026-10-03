@@ -39,7 +39,7 @@ func TestLoadDefaults(t *testing.T) {
 		Addr: ":8080", MetricsAddr: ":9090", PolicyDir: "policies", LogLevel: "info", LogFormat: "json",
 		MaxBodyBytes: 1 << 20, APIKeys: "k",
 		JevURL: "http://jev:8000", JevAPIKey: "jev-key", JevAuthHeader: "Authorization", JevAuthScheme: "Bearer",
-		JevTimeout: 5 * time.Second, JevEvaluatePath: "/v1/evaluate", JevHealthPath: "/health",
+		JevTimeout: 5 * time.Second, JevEvaluatePath: "/v1/systemone", JevModel: "jev-latest", JevHealthPath: "",
 		JevMaxConcurrency: 100, JevQueueTimeout: 250 * time.Millisecond,
 		JevBreakerThreshold: 5, JevBreakerOpenTimeout: 15 * time.Second, JevBreakerHalfOpenReqs: 1,
 		ReadyCheckJev: true, ShutdownDelay: 5 * time.Second, ShutdownTimeout: 15 * time.Second,
@@ -49,11 +49,19 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestJevURLDefaultsToTypeSafe(t *testing.T) {
+	c, err := Load(base(map[string]string{"JEV_URL": "<unset>"}))
+	if err != nil || c.JevURL != "https://api.typesafe.ai" {
+		t.Fatalf("JevURL=%q err=%v", c.JevURL, err)
+	}
+}
+
 func TestLoadOverrides(t *testing.T) {
 	keyFile := writeFile(t, "b:fedcba9876543210\n")
 	c, err := Load(base(map[string]string{
 		"JEV_TIMEOUT":                      "750ms",
-		"JEV_HEALTH_PATH":                  "-",
+		"JEV_HEALTH_PATH":                  "/healthz",
+		"JEV_MODEL":                        "jev-1.13.0",
 		"GUARDRAIL_METRICS_ADDR":           "-",
 		"GUARDRAIL_API_KEYS":               "a:0123456789abcdef",
 		"GUARDRAIL_API_KEYS_FILE":          keyFile,
@@ -68,7 +76,7 @@ func TestLoadOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.JevTimeout != 750*time.Millisecond || c.JevHealthPath != "" || c.MetricsAddr != "" || c.MaxBodyBytes != 2048 ||
+	if c.JevTimeout != 750*time.Millisecond || c.JevHealthPath != "/healthz" || c.JevModel != "jev-1.13.0" || c.MetricsAddr != "" || c.MaxBodyBytes != 2048 ||
 		c.APIKeys != "a:0123456789abcdef,b:fedcba9876543210" || c.ShutdownDelay != 0 || c.ReadyCheckJev ||
 		c.JevMaxConcurrency != 8 || c.JevQueueTimeout != 0 || c.JevBreakerThreshold != 0 || c.JevBreakerOpenTimeout != 30*time.Second {
 		t.Fatalf("unexpected config: %+v", c)
@@ -126,7 +134,6 @@ func TestKeysFileSkipsCommentsAndBlankLines(t *testing.T) {
 
 func TestLoadErrors(t *testing.T) {
 	tests := map[string]map[string]string{
-		"JEV_URL is required":                {"JEV_URL": "<unset>"},
 		"authentication requires":            {"GUARDRAIL_API_KEYS": "<unset>"},
 		"comments only file":                 {"GUARDRAIL_API_KEYS": "<unset>", "GUARDRAIL_API_KEYS_FILE": "COMMENTS"},
 		"conflicts with configured API keys": {"GUARDRAIL_AUTH_DISABLED": "true"},

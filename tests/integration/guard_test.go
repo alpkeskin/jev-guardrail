@@ -206,7 +206,7 @@ func TestMethodNotAllowed(t *testing.T) {
 // --- Full pipeline with the real Jev adapter against a fake Jev server ---
 
 func TestJevPipeline(t *testing.T) {
-	scores := map[string]float64{"prompt_injection": 0.96, "system_prompt_leakage": 0.91, "jailbreak": 0.1}
+	scores := map[string]float64{"prompt_injection": 0.96, "system_prompt_leak": 0.91, "jailbreak": 0.1}
 	jevSrv, headers, reqs := newFakeJev(t, scores, 0, 0)
 	h := newHarness(t, newJevEvaluator(t, jevSrv.URL, time.Second))
 
@@ -217,14 +217,14 @@ func TestJevPipeline(t *testing.T) {
 	if len(r.body.Findings) != 2 || r.body.Findings[0].Score != 0.96 || r.body.Findings[1].Category != guardrail.CategorySystemPromptLeak {
 		t.Fatalf("findings = %+v", r.body.Findings)
 	}
-	if strings.Contains(r.raw, "JEV-INTERNAL") || strings.Contains(r.raw, "system_prompt_leakage") {
+	if strings.Contains(r.raw, "JEV-INTERNAL") || strings.Contains(r.raw, "system_prompt_leak\"") {
 		t.Fatalf("jev internals leaked: %s", r.raw)
 	}
-	// acme-production enables 3 rules -> exactly those detectors are requested.
-	if got := (*reqs)[0].Detectors; len(got) != 3 {
-		t.Fatalf("detectors = %v", got)
+	// acme-production enables 3 rules -> exactly those questions are asked.
+	if got := (*reqs)[0].Questions; len(got) != 3 {
+		t.Fatalf("questions = %v", got)
 	}
-	if (*headers)[0].Get("X-Request-ID") != "req_123" || (*reqs)[0].Metadata["request_id"] != "req_123" {
+	if (*headers)[0].Get("X-Request-ID") != "req_123" {
 		t.Fatalf("request id not forwarded to jev")
 	}
 }

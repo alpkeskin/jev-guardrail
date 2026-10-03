@@ -22,7 +22,9 @@ configMapGenerator:
     literals:
       - GUARDRAIL_LOG_LEVEL=info
       - GUARDRAIL_LOG_FORMAT=json
-      - JEV_URL=http://jev.jev.svc.cluster.local:8000
+      # TypeSafe's hosted System One API. The pod needs egress to it.
+      - JEV_URL=https://api.typesafe.ai
+      - JEV_MODEL=jev-latest
       - JEV_TIMEOUT=5s
       - JEV_MAX_CONCURRENCY=100
       - JEV_QUEUE_TIMEOUT=250ms

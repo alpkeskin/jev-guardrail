@@ -1,0 +1,18 @@
+# Evaluation policy for benchmark reports: every category blocks. Tuned
+# like policies/default.yaml (1% combined benign false positive budget,
+# floor 0.30) but over all eight categories, so the shared budget gives
+# slightly higher thresholds. Pass -policy policies/default.yaml to the
+# report to evaluate the shipped default instead.
+version: "1"
+
+client_id: eval-all
+
+rules:
+  prompt_injection:         {enabled: true, threshold: 0.30, action: block}
+  jailbreak:                {enabled: true, threshold: 0.30, action: block}
+  system_prompt_extraction: {enabled: true, threshold: 0.45, action: block}
+  secret_exfiltration:      {enabled: true, threshold: 0.89, action: block}
+  sensitive_data:           {enabled: true, threshold: 0.98, action: block}
+  malicious_instruction:    {enabled: true, threshold: 0.83, action: block}
+  malicious_url:            {enabled: true, threshold: 0.45, action: block}
+  unsafe_content:           {enabled: true, threshold: 0.83, action: block}
