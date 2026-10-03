@@ -20,6 +20,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#taxonomy">Taxonomy</a> ·
   <a href="docs/api.md">API</a> ·
   <a href="docs/policies.md">Policies</a> ·
   <a href="docs/configuration.md">Configuration</a> ·
@@ -97,6 +98,47 @@ curl -s localhost:8080/v1/guard \
 }
 ```
 
+## Taxonomy
+
+Every evaluation scores content against a fixed set of categories.
+Each category is also the `reason.code` of a `BLOCKED` judgment.
+
+| Category | Policy key | Detects | Default policy |
+|---|---|---|---|
+| `PROMPT_INJECTION` | `prompt_injection` | Attempts to override existing instructions. *"Ignore all previous instructions…"* | block ≥ 0.80 |
+| `JAILBREAK` | `jailbreak` | Attempts to bypass safety restrictions. *"You are now in developer mode…"* | block ≥ 0.85 |
+| `SYSTEM_PROMPT_LEAK` | `system_prompt_extraction` | Extracting or leaking the system prompt. | block ≥ 0.80 |
+| `SECRET_EXFILTRATION` | `secret_exfiltration` | Secrets or credentials being requested or exposed. | block ≥ 0.80 |
+| `SENSITIVE_DATA` | `sensitive_data` | Personal or sensitive data (PII). | block ≥ 0.90 |
+| `MALICIOUS_INSTRUCTION` | `malicious_instruction` | Instructions intended to cause harm. | block ≥ 0.85 |
+| `MALICIOUS_URL` | `malicious_url` | Malicious or suspicious URLs. | off |
+| `UNSAFE_CONTENT` | `unsafe_content` | Otherwise unsafe content. | off |
+
+**How a category becomes a judgment**
+
+1. Jev returns a score from `0` to `1` for each category enabled in the policy.
+2. A finding **matches** when its score is at or above the rule's `threshold`.
+3. A matched `block` rule makes the judgment `BLOCKED`. A matched `review` rule is reported in `findings` only.
+4. With several blocking matches, the highest score is the primary `reason`. Ties follow the table order.
+
+**Failure codes** explain `FAILED`. They never describe the content.
+
+| Code | When | HTTP |
+|---|---|---|
+| `INVALID_REQUEST` | Malformed JSON, missing or empty `content`, body too large | `400` / `413` |
+| `UNSUPPORTED_CONTENT` | Unknown `content_type` or invalid UTF-8 | `400` |
+| `JEV_TIMEOUT` | Jev did not answer in time | `503` |
+| `JEV_UNAVAILABLE` | Jev unreachable or overloaded, circuit breaker open, or concurrency limit reached | `503` |
+| `JEV_ERROR` | Jev returned an error or an invalid response | `502` |
+| `INVALID_POLICY` | No policy could be resolved | `500` |
+| `INTERNAL_ERROR` | Unexpected internal error | `500` |
+
+**Content types:** `prompt`, `response`, `tool_input`, `tool_output`, `document`, `text` (default).
+
+> [!IMPORTANT]
+> Codes are a stable contract. They are uppercase, never renamed and never reused.
+> New codes may be added, so handle unknown values. Decide on `code`, never on `message`.
+
 ## Judgments
 
 <p align="center">
@@ -112,7 +154,7 @@ curl -s localhost:8080/v1/guard \
 | `BLOCKED` | Evaluated. At least one block rule matched. | `200` |
 | `FAILED` | Could not evaluate reliably. Not evidence of malice. | `400` `413` `500` `502` `503` |
 
-Decide on `reason.code`, not `reason.message`. Full reference: [docs/api.md](docs/api.md) · [OpenAPI](internal/api/openapi.yaml).
+Full reference: [docs/api.md](docs/api.md) · [OpenAPI](internal/api/openapi.yaml).
 
 ## Policies
 
