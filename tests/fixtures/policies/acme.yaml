@@ -1,0 +1,13 @@
+# Filename intentionally differs from client_id.
+version: "1"
+client_id: acme-production
+rules:
+  prompt_injection:
+    threshold: 0.70
+    action: block
+  jailbreak:
+    threshold: 0.85
+    action: block
+  system_prompt_extraction:
+    threshold: 0.80
+    action: block

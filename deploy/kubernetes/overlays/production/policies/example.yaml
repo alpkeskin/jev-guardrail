@@ -1,0 +1,38 @@
+# Example client policy. The filename is not an identifier: requests with
+# "X-Client-ID: example" select this policy because of client_id below.
+#
+# This client blocks injection and jailbreaks but only reports (action:
+# review) sensitive data. Review matches appear in findings while the
+# judgment stays PASSED.
+version: "1"
+
+client_id: example
+
+description: Blocks injection attempts, reports sensitive data.
+
+rules:
+
+  prompt_injection:
+    enabled: true
+    threshold: 0.80
+    action: block
+
+  jailbreak:
+    enabled: true
+    threshold: 0.85
+    action: block
+
+  system_prompt_extraction:
+    enabled: true
+    threshold: 0.80
+    action: block
+
+  sensitive_data:
+    enabled: true
+    threshold: 0.90
+    action: review
+
+  malicious_url:
+    enabled: false
+    threshold: 0.90
+    action: block

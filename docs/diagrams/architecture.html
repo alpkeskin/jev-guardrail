@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jev Guardrail · Architecture</title>
+  <!-- Generated with diagram-design conventions (github.com/cathrynlavery/diagram-design). -->
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Geist', system-ui, sans-serif; background: #f3f4f1; color: #111111;
+           min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 3rem 2rem; }
+    .frame { width: 1000px; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em;
+               text-transform: uppercase; color: #55564f; margin-bottom: 0.5rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-size: 2rem; font-weight: 400; letter-spacing: -0.02em;
+         line-height: 1.15; margin-bottom: 1.5rem; }
+    svg { width: 1000px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · Jev Guardrail</p>
+    <h1>Where Jev Guardrail sits</h1>
+    <svg viewBox="0 80 1000 408" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="architecture-title architecture-desc">
+    <title id="architecture-title">Where Jev Guardrail sits</title>
+    <desc id="architecture-desc">Architecture diagram: an application sends prompts and responses to Jev Guardrail, which resolves a policy, asks Jev for scores and returns a judgment; the application calls the LLM provider only if the content passed.</desc>
+    <defs><marker id="architecture-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#55564f"/></marker><marker id="architecture-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker><marker id="architecture-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker></defs>
+    <rect x="0" y="80" width="1000" height="408" fill="#f3f4f1"/>
+    <path d="M 200,200 H 400" fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#architecture-arrow-accent)"/>
+    <path d="M 400,216 H 200" fill="none" stroke="#55564f" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#architecture-arrow)"/>
+    <path d="M 120,176 V 136 Q 120,128 128,128 H 872 Q 880,128 880,136 V 176" fill="none" stroke="#55564f" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+    <path d="M 440,336 V 240" fill="none" stroke="#55564f" stroke-width="1.2" marker-end="url(#architecture-arrow)"/>
+    <path d="M 600,240 V 336" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#architecture-arrow-link)"/>
+    <rect x="250" y="180" width="100" height="12" rx="2" fill="#f3f4f1"/>
+    <text x="300" y="189" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PROMPT · RESPONSE</text>
+    <rect x="274" y="224" width="52" height="12" rx="2" fill="#f3f4f1"/>
+    <text x="300" y="233" fill="#55564f" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">JUDGMENT</text>
+    <rect x="662" y="108" width="84" height="12" rx="2" fill="#f3f4f1"/>
+    <text x="704" y="117" fill="#55564f" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ONLY IF PASSED</text>
+    <rect x="376" y="276" width="48" height="12" rx="2" fill="#f3f4f1"/>
+    <text x="400" y="285" fill="#55564f" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RESOLVE</text>
+    <rect x="612" y="276" width="52" height="12" rx="2" fill="#f3f4f1"/>
+    <text x="638" y="285" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EVALUATE</text>
+    <text x="40" y="336" fill="#111111" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">Your app owns enforcement.</text>
+    <path d="M 112,320 Q 120,292 120,244" fill="none" stroke="rgba(17,17,17,0.4)" stroke-width="1" stroke-dasharray="4,3"/>
+    <circle cx="120" cy="244" r="2" fill="#111111"/>
+    <text x="960" y="336" fill="#111111" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">Never calls the LLM itself.</text>
+    <path d="M 840,320 Q 760,300 612,232" fill="none" stroke="rgba(17,17,17,0.4)" stroke-width="1" stroke-dasharray="4,3"/>
+    <circle cx="612" cy="232" r="2" fill="#111111"/>
+    <rect x="40" y="176" width="160" height="64" rx="6" fill="#f3f4f1"/>
+    <rect x="40" y="176" width="160" height="64" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1"/>
+    <rect x="48" y="184" width="24" height="12" rx="2" fill="none" stroke="rgba(17,17,17,0.4)" stroke-width="0.8"/>
+    <text x="60" y="193" fill="#111111" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+    <text x="120" y="212" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Your application</text>
+    <text x="120" y="228" fill="#55564f" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">app · agent · gateway</text>
+    <rect x="400" y="176" width="208" height="64" rx="6" fill="#f3f4f1"/>
+    <rect x="400" y="176" width="208" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+    <rect x="408" y="184" width="24" height="12" rx="2" fill="none" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+    <text x="420" y="193" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+    <text x="504" y="212" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Jev Guardrail</text>
+    <text x="504" y="228" fill="#55564f" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">POST /v1/guard</text>
+    <rect x="800" y="176" width="160" height="64" rx="6" fill="#f3f4f1"/>
+    <rect x="800" y="176" width="160" height="64" rx="6" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.3)" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="808" y="184" width="24" height="12" rx="2" fill="none" stroke="rgba(17,17,17,0.22)" stroke-width="0.8"/>
+    <text x="820" y="193" fill="#85867f" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+    <text x="880" y="212" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">LLM provider</text>
+    <text x="880" y="228" fill="#55564f" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">any model</text>
+    <rect x="368" y="336" width="144" height="64" rx="6" fill="#f3f4f1"/>
+    <rect x="368" y="336" width="144" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#55564f" stroke-width="1"/>
+    <rect x="376" y="344" width="28" height="12" rx="2" fill="none" stroke="rgba(17,17,17,0.4)" stroke-width="0.8"/>
+    <text x="390" y="353" fill="#55564f" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">YAML</text>
+    <text x="440" y="372" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Policies</text>
+    <text x="440" y="388" fill="#55564f" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">per client</text>
+    <rect x="528" y="336" width="144" height="64" rx="6" fill="#f3f4f1"/>
+    <rect x="528" y="336" width="144" height="64" rx="6" fill="rgba(17,17,17,0.03)" stroke="rgba(17,17,17,0.3)" stroke-width="1"/>
+    <rect x="536" y="344" width="24" height="12" rx="2" fill="none" stroke="rgba(17,17,17,0.22)" stroke-width="0.8"/>
+    <text x="548" y="353" fill="#85867f" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+    <text x="600" y="372" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Jev</text>
+    <text x="600" y="388" fill="#55564f" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">detection</text>
+    <line x1="40" y1="432" x2="960" y2="432" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+    <text x="40" y="448" fill="#55564f" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="460" width="16" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+    <text x="64" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">Decision service</text>
+    <rect x="168" y="460" width="16" height="12" rx="2" fill="#ffffff" stroke="#111111" stroke-width="1"/>
+    <text x="192" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">Caller</text>
+    <rect x="248" y="460" width="16" height="12" rx="2" fill="rgba(17,17,17,0.05)" stroke="#55564f" stroke-width="1"/>
+    <text x="272" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">Config</text>
+    <rect x="328" y="460" width="16" height="12" rx="2" fill="rgba(17,17,17,0.03)" stroke="rgba(17,17,17,0.3)" stroke-width="1"/>
+    <text x="352" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">Dependency</text>
+    <rect x="427" y="460" width="16" height="12" rx="2" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.3)" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="451" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">Called by your app</text>
+    <line x1="564" y1="466" x2="592" y2="466" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#architecture-arrow-accent)"/>
+    <text x="600" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">Guard check</text>
+    <line x1="680" y1="466" x2="708" y2="466" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#architecture-arrow-link)"/>
+    <text x="716" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">API call</text>
+    <line x1="782" y1="466" x2="810" y2="466" stroke="#55564f" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#architecture-arrow)"/>
+    <text x="818" y="469" fill="#55564f" font-size="8.5" font-family="'Geist', sans-serif">Return</text>
+</svg>
+  </div>
+</body>
+</html>

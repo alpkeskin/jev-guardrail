@@ -1,0 +1,37 @@
+# Mandatory default policy. Used when X-Client-ID is missing or unknown.
+# The service refuses to start if this file is missing or invalid.
+version: "1"
+
+client_id: default
+
+rules:
+
+  prompt_injection:
+    enabled: true
+    threshold: 0.80
+    action: block
+
+  jailbreak:
+    enabled: true
+    threshold: 0.85
+    action: block
+
+  system_prompt_extraction:
+    enabled: true
+    threshold: 0.80
+    action: block
+
+  secret_exfiltration:
+    enabled: true
+    threshold: 0.80
+    action: block
+
+  sensitive_data:
+    enabled: true
+    threshold: 0.90
+    action: block
+
+  malicious_instruction:
+    enabled: true
+    threshold: 0.85
+    action: block

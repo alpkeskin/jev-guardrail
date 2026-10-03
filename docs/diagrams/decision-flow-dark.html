@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jev Guardrail · Decision flow</title>
+  <!-- Generated with diagram-design conventions (github.com/cathrynlavery/diagram-design). -->
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Geist', system-ui, sans-serif; background: #161615; color: #f3f4f1;
+           min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 3rem 2rem; }
+    .frame { width: 1000px; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em;
+               text-transform: uppercase; color: #b4b5ae; margin-bottom: 0.5rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-size: 2rem; font-weight: 400; letter-spacing: -0.02em;
+         line-height: 1.15; margin-bottom: 1.5rem; }
+    svg { width: 1000px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Flowchart · Jev Guardrail</p>
+    <h1>How a request is judged</h1>
+    <svg viewBox="0 0 1000 768" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="decision-flow-dark-title decision-flow-dark-desc">
+    <title id="decision-flow-dark-title">How a request is judged</title>
+    <desc id="decision-flow-dark-desc">Flowchart: a guard request is matched to a policy and validated, then evaluated by Jev; invalid input or Jev errors end as FAILED, a matched block rule ends as BLOCKED, otherwise PASSED.</desc>
+    <defs><marker id="decision-flow-dark-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#b4b5ae"/></marker><marker id="decision-flow-dark-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#f08a59"/></marker><marker id="decision-flow-dark-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#6a95d8"/></marker></defs>
+    <rect x="0" y="0" width="1000" height="768" fill="#161615"/>
+    <path d="M 500,80 V 112" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <path d="M 500,168 V 200" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <path d="M 500,280 V 316" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <path d="M 500,372 V 404" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <path d="M 500,484 V 520" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <path d="M 596,240 H 808 Q 816,240 816,248 V 316" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <path d="M 596,444 H 808 Q 816,444 816,436 V 368" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <path d="M 612,560 H 736" fill="none" stroke="#f08a59" stroke-width="1.4" marker-end="url(#decision-flow-dark-arrow-accent)"/>
+    <path d="M 500,600 V 640" fill="none" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <rect x="512" y="292" width="24" height="12" rx="2" fill="#161615"/>
+    <text x="524" y="301" fill="#b4b5ae" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+    <rect x="512" y="496" width="24" height="12" rx="2" fill="#161615"/>
+    <text x="524" y="505" fill="#b4b5ae" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+    <rect x="690" y="220" width="20" height="12" rx="2" fill="#161615"/>
+    <text x="700" y="229" fill="#b4b5ae" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO</text>
+    <rect x="690" y="424" width="20" height="12" rx="2" fill="#161615"/>
+    <text x="700" y="433" fill="#b4b5ae" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO</text>
+    <rect x="664" y="540" width="24" height="12" rx="2" fill="#161615"/>
+    <text x="676" y="549" fill="#f08a59" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+    <rect x="512" y="612" width="20" height="12" rx="2" fill="#161615"/>
+    <text x="522" y="621" fill="#b4b5ae" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO</text>
+    <text x="952" y="136" fill="#f3f4f1" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">Errors are FAILED, never BLOCKED.</text>
+    <path d="M 876,144 Q 904,228 856,312" fill="none" stroke="rgba(243,244,241,0.4)" stroke-width="1" stroke-dasharray="4,3"/>
+    <circle cx="856" cy="316" r="2" fill="#f3f4f1"/>
+    <text x="64" y="668" fill="#f3f4f1" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="start">Review matches are reported, not blocked.</text>
+    <path d="M 292,664 H 404" fill="none" stroke="rgba(243,244,241,0.4)" stroke-width="1" stroke-dasharray="4,3"/>
+    <circle cx="408" cy="664" r="2" fill="#f3f4f1"/>
+    <rect x="412" y="32" width="176" height="48" rx="24" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="500" y="55" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Request</text>
+    <text x="500" y="70" fill="#b4b5ae" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">POST /v1/guard</text>
+    <rect x="412" y="112" width="176" height="56" rx="6" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="500" y="138" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Resolve policy</text>
+    <text x="500" y="154" fill="#b4b5ae" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">X-Client-ID · default</text>
+    <polygon points="500,200 596,240 500,280 404,240" fill="#161615"/>
+    <polygon points="500,200 596,240 500,280 404,240" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="500" y="244" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Valid request?</text>
+    <rect x="412" y="316" width="176" height="56" rx="6" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="500" y="342" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Evaluate with Jev</text>
+    <text x="500" y="358" fill="#b4b5ae" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">breaker · concurrency limit</text>
+    <polygon points="500,404 596,444 500,484 404,444" fill="#161615"/>
+    <polygon points="500,404 596,444 500,484 404,444" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="500" y="448" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Jev responded?</text>
+    <polygon points="500,520 612,560 500,600 388,560" fill="#161615"/>
+    <polygon points="500,520 612,560 500,600 388,560" fill="rgba(240,138,89,0.10)" stroke="#f08a59" stroke-width="1"/>
+    <text x="500" y="564" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Block rule matched?</text>
+    <rect x="736" y="316" width="160" height="52" rx="26" fill="rgba(243,244,241,0.04)" stroke="#b4b5ae" stroke-width="1"/>
+    <text x="816" y="341" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">FAILED</text>
+    <text x="816" y="356" fill="#b4b5ae" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">400 · 502 · 503</text>
+    <rect x="736" y="536" width="160" height="48" rx="24" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="816" y="559" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">BLOCKED</text>
+    <text x="816" y="574" fill="#b4b5ae" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">HTTP 200</text>
+    <rect x="412" y="640" width="176" height="48" rx="24" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="500" y="663" fill="#f3f4f1" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PASSED</text>
+    <text x="500" y="678" fill="#b4b5ae" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">HTTP 200</text>
+    <line x1="40" y1="712" x2="960" y2="712" stroke="rgba(243,244,241,0.1)" stroke-width="0.8"/>
+    <text x="40" y="728" fill="#b4b5ae" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+    <rect x="40" y="740" width="20" height="12" rx="6" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="68" y="749" fill="#b4b5ae" font-size="8.5" font-family="'Geist', sans-serif">Start / judgment</text>
+    <rect x="172" y="740" width="16" height="12" rx="2" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="196" y="749" fill="#b4b5ae" font-size="8.5" font-family="'Geist', sans-serif">Step</text>
+    <polygon points="253,740 265,746 253,752 241,746" fill="#1f1f1d" stroke="#f3f4f1" stroke-width="1"/>
+    <text x="271" y="749" fill="#b4b5ae" font-size="8.5" font-family="'Geist', sans-serif">Decision</text>
+    <polygon points="347,740 359,746 347,752 335,746" fill="rgba(240,138,89,0.10)" stroke="#f08a59" stroke-width="1"/>
+    <text x="365" y="749" fill="#b4b5ae" font-size="8.5" font-family="'Geist', sans-serif">Policy decision</text>
+    <line x1="464" y1="746" x2="492" y2="746" stroke="#b4b5ae" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow)"/>
+    <text x="500" y="749" fill="#b4b5ae" font-size="8.5" font-family="'Geist', sans-serif">Flow</text>
+    <line x1="547" y1="746" x2="575" y2="746" stroke="#f08a59" stroke-width="1.2" marker-end="url(#decision-flow-dark-arrow-accent)"/>
+    <text x="583" y="749" fill="#b4b5ae" font-size="8.5" font-family="'Geist', sans-serif">Block path</text>
+</svg>
+  </div>
+</body>
+</html>
