@@ -30,7 +30,7 @@ linters:
       # Tests use fixed local fixtures and httptest servers.
       - path: _test\.go
         linters: [gosec, noctx, bodyclose, unparam, usestdlibvars]
-      - path: tools/
+      - path: tests/mockjev/
         linters: [gosec]
 
 formatters:

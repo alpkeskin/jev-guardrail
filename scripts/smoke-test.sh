@@ -49,7 +49,7 @@ expect() { # description, haystack, needle
   case "$2" in *"$3"*) echo "ok   $1" ;; *) fail "$1: expected '$3' in: $2" ;; esac
 }
 
-go build -o "$WORK/mockjev" ./tools/mockjev
+go build -o "$WORK/mockjev" ./tests/mockjev
 "$WORK/mockjev" -addr "$JEV" -api-key "$JEV_KEY" >"$WORK/mockjev.log" 2>&1 &
 MOCK_PID=$!
 wait_for "http://$JEV/health"

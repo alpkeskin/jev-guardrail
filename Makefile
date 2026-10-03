@@ -56,7 +56,7 @@ run: build
 
 ## mockjev: development-only Jev stand-in on :8000
 mockjev:
-	go run ./tools/mockjev -addr :8000
+	go run ./tests/mockjev -addr :8000
 
 docker:
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(IMAGE) .
