@@ -18,7 +18,9 @@ configMapGenerator:
   - name: jev-guardrail-config
     behavior: merge
     literals:
-      - JEV_URL=https://jev.internal.example.com
+      # Pin the model: "jev-latest" moves to new versions, which can shift
+      # scores under fixed policy thresholds.
+      - JEV_MODEL=jev-1.13.0
   - name: jev-guardrail-policies
     behavior: merge
     files:

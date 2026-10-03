@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,9 +28,10 @@ func policyWith(cats ...guardrail.Category) guardrail.Policy {
 // fakeJev records requests and replies with a configurable handler.
 type fakeJev struct {
 	mu       sync.Mutex
-	requests []EvaluateRequest
+	requests []SystemOneRequest
+	paths    []string
 	headers  []http.Header
-	handler  func(w http.ResponseWriter, req EvaluateRequest)
+	handler  func(w http.ResponseWriter, req SystemOneRequest)
 }
 
 func (f *fakeJev) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,21 +39,22 @@ func (f *fakeJev) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	var req EvaluateRequest
+	var req SystemOneRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
+	f.paths = append(f.paths, r.URL.Path)
 	f.headers = append(f.headers, r.Header.Clone())
 	f.mu.Unlock()
 	f.handler(w, req)
 }
 
-func respondScores(scores map[string]float64) func(http.ResponseWriter, EvaluateRequest) {
-	return func(w http.ResponseWriter, req EvaluateRequest) {
-		resp := EvaluateResponse{Results: []DetectorResult{}}
-		for _, d := range req.Detectors {
-			s := scores[d]
-			resp.Results = append(resp.Results, DetectorResult{Detector: d, Score: ptr(s), Explanation: "internal"})
+// respondScores answers every requested question with scores[id].
+func respondScores(scores map[string]float64) func(http.ResponseWriter, SystemOneRequest) {
+	return func(w http.ResponseWriter, req SystemOneRequest) {
+		resp := SystemOneResponse{Model: "jev-1.13.0", Answers: map[string]Answer{}}
+		for id := range req.Questions {
+			resp.Answers[id] = Answer{Type: "noul", Noul: ptr(scores[id])}
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}
@@ -67,7 +70,7 @@ func newTestClient(t *testing.T, url string, timeout time.Duration) *Client {
 }
 
 func TestEvaluatorMapsResultsAndPropagatesRequestID(t *testing.T) {
-	fj := &fakeJev{handler: respondScores(map[string]float64{"prompt_injection": 0.94, "system_prompt_leakage": 0.2})}
+	fj := &fakeJev{handler: respondScores(map[string]float64{"prompt_injection": 0.94, "system_prompt_leak": 0.2})}
 	srv := httptest.NewServer(fj)
 	defer srv.Close()
 
@@ -79,7 +82,9 @@ func TestEvaluatorMapsResultsAndPropagatesRequestID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	if len(eval.Findings) != 2 {
+	// Findings come back in taxonomy order regardless of map order.
+	if len(eval.Findings) != 2 || eval.Findings[0].Category != guardrail.CategoryPromptInjection ||
+		eval.Findings[0].Score != 0.94 || eval.Findings[1].Category != guardrail.CategorySystemPromptLeak {
 		t.Fatalf("findings = %+v", eval.Findings)
 	}
 	for _, f := range eval.Findings {
@@ -92,15 +97,24 @@ func TestEvaluatorMapsResultsAndPropagatesRequestID(t *testing.T) {
 	}
 
 	req, hdr := fj.requests[0], fj.headers[0]
-	if req.Input != in.Content || req.InputType != "prompt" {
-		t.Errorf("unexpected request %+v", req)
+	if fj.paths[0] != "/v1/systemone" || req.Model != "jev-latest" {
+		t.Errorf("path=%q model=%q", fj.paths[0], req.Model)
 	}
-	// Detectors are requested in taxonomy order using Jev names.
-	if len(req.Detectors) != 2 || req.Detectors[0] != "prompt_injection" || req.Detectors[1] != "system_prompt_leakage" {
-		t.Errorf("detectors = %v", req.Detectors)
+	if req.State.Content != in.Content || req.State.Source != SourceFor(guardrail.ContentPrompt) {
+		t.Errorf("unexpected state %+v", req.State)
 	}
-	if req.Metadata["request_id"] != "req_123" || hdr.Get("X-Request-ID") != "req_123" {
-		t.Errorf("request id not propagated: metadata=%v header=%q", req.Metadata, hdr.Get("X-Request-ID"))
+	// Exactly the enabled categories are asked, as Nouls about `content`.
+	if len(req.Questions) != 2 {
+		t.Errorf("questions = %v", req.Questions)
+	}
+	for _, id := range []string{"prompt_injection", "system_prompt_leak"} {
+		q, ok := req.Questions[id]
+		if !ok || q.Type != "noul" || !strings.Contains(q.Instructions, "`content`") || q.Criteria == nil {
+			t.Errorf("question %s = %+v", id, q)
+		}
+	}
+	if hdr.Get("X-Request-ID") != "req_123" {
+		t.Errorf("request id not propagated: header=%q", hdr.Get("X-Request-ID"))
 	}
 	if hdr.Get("Authorization") != "Bearer jev-secret" {
 		t.Errorf("authorization = %q", hdr.Get("Authorization"))
@@ -122,28 +136,34 @@ func TestEvaluatorErrors(t *testing.T) {
 	pol := policyWith(guardrail.CategoryPromptInjection)
 	tests := []struct {
 		name    string
-		handler func(http.ResponseWriter, EvaluateRequest)
+		handler func(http.ResponseWriter, SystemOneRequest)
 		timeout time.Duration
 		want    guardrail.ReasonCode
 	}{
-		{"timeout", func(w http.ResponseWriter, _ EvaluateRequest) {
+		{"timeout", func(w http.ResponseWriter, _ SystemOneRequest) {
 			time.Sleep(200 * time.Millisecond)
 		}, 50 * time.Millisecond, guardrail.ReasonJevTimeout},
-		{"503", func(w http.ResponseWriter, _ EvaluateRequest) { w.WriteHeader(http.StatusServiceUnavailable) }, time.Second, guardrail.ReasonJevUnavailable},
-		{"429", func(w http.ResponseWriter, _ EvaluateRequest) { w.WriteHeader(http.StatusTooManyRequests) }, time.Second, guardrail.ReasonJevUnavailable},
-		{"504", func(w http.ResponseWriter, _ EvaluateRequest) { w.WriteHeader(http.StatusGatewayTimeout) }, time.Second, guardrail.ReasonJevTimeout},
-		{"500", func(w http.ResponseWriter, _ EvaluateRequest) { w.WriteHeader(http.StatusInternalServerError) }, time.Second, guardrail.ReasonJevError},
-		{"400", func(w http.ResponseWriter, _ EvaluateRequest) { w.WriteHeader(http.StatusBadRequest) }, time.Second, guardrail.ReasonJevError},
-		{"malformed json", func(w http.ResponseWriter, _ EvaluateRequest) { _, _ = w.Write([]byte("{not json")) }, time.Second, guardrail.ReasonJevError},
-		{"missing results", func(w http.ResponseWriter, _ EvaluateRequest) { _, _ = w.Write([]byte(`{}`)) }, time.Second, guardrail.ReasonJevError},
-		{"missing requested detector", func(w http.ResponseWriter, _ EvaluateRequest) {
-			_, _ = w.Write([]byte(`{"results":[]}`))
+		{"503", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(http.StatusServiceUnavailable) }, time.Second, guardrail.ReasonJevUnavailable},
+		{"429", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(http.StatusTooManyRequests) }, time.Second, guardrail.ReasonJevUnavailable},
+		{"504", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(http.StatusGatewayTimeout) }, time.Second, guardrail.ReasonJevTimeout},
+		{"529 overloaded", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(529) }, time.Second, guardrail.ReasonJevUnavailable},
+		{"401", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(http.StatusUnauthorized) }, time.Second, guardrail.ReasonJevError},
+		{"422", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(http.StatusUnprocessableEntity) }, time.Second, guardrail.ReasonJevError},
+		{"500", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(http.StatusInternalServerError) }, time.Second, guardrail.ReasonJevError},
+		{"400", func(w http.ResponseWriter, _ SystemOneRequest) { w.WriteHeader(http.StatusBadRequest) }, time.Second, guardrail.ReasonJevError},
+		{"malformed json", func(w http.ResponseWriter, _ SystemOneRequest) { _, _ = w.Write([]byte("{not json")) }, time.Second, guardrail.ReasonJevError},
+		{"missing answers", func(w http.ResponseWriter, _ SystemOneRequest) { _, _ = w.Write([]byte(`{}`)) }, time.Second, guardrail.ReasonJevError},
+		{"missing requested answer", func(w http.ResponseWriter, _ SystemOneRequest) {
+			_, _ = w.Write([]byte(`{"answers":{}}`))
 		}, time.Second, guardrail.ReasonJevError},
-		{"missing score", func(w http.ResponseWriter, _ EvaluateRequest) {
-			_, _ = w.Write([]byte(`{"results":[{"detector":"prompt_injection"}]}`))
+		{"missing noul", func(w http.ResponseWriter, _ SystemOneRequest) {
+			_, _ = w.Write([]byte(`{"answers":{"prompt_injection":{"type":"noul"}}}`))
 		}, time.Second, guardrail.ReasonJevError},
-		{"score out of range", func(w http.ResponseWriter, _ EvaluateRequest) {
-			_, _ = w.Write([]byte(`{"results":[{"detector":"prompt_injection","score":7}]}`))
+		{"wrong answer type", func(w http.ResponseWriter, _ SystemOneRequest) {
+			_, _ = w.Write([]byte(`{"answers":{"prompt_injection":{"type":"score","noul":0.5}}}`))
+		}, time.Second, guardrail.ReasonJevError},
+		{"noul out of range", func(w http.ResponseWriter, _ SystemOneRequest) {
+			_, _ = w.Write([]byte(`{"answers":{"prompt_injection":{"type":"noul","noul":7}}}`))
 		}, time.Second, guardrail.ReasonJevError},
 	}
 	for _, tc := range tests {
@@ -177,7 +197,7 @@ func TestEvaluatorUnavailable(t *testing.T) {
 }
 
 func TestEvaluatorCallerCanceled(t *testing.T) {
-	srv := httptest.NewServer(&fakeJev{handler: func(http.ResponseWriter, EvaluateRequest) { time.Sleep(200 * time.Millisecond) }})
+	srv := httptest.NewServer(&fakeJev{handler: func(http.ResponseWriter, SystemOneRequest) { time.Sleep(200 * time.Millisecond) }})
 	defer srv.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
@@ -195,30 +215,59 @@ func TestReady(t *testing.T) {
 	}
 }
 
-func TestMapResultsDropsUnknownDetectors(t *testing.T) {
-	findings, ignored, err := MapResults([]DetectorResult{
-		{Detector: "prompt_injection", Score: ptr(0.5)},
-		{Detector: "some_new_jev_detector", Score: ptr(0.99)},
+func TestMapAnswersDropsUnknownQuestions(t *testing.T) {
+	findings, ignored, err := MapAnswers(map[string]Answer{
+		"prompt_injection": {Type: "noul", Noul: ptr(0.5)},
+		"something_else":   {Type: "noul", Noul: ptr(0.99)},
 	})
-	if err != nil || len(findings) != 1 || findings[0].Category != guardrail.CategoryPromptInjection {
+	if err != nil || len(findings) != 1 || findings[0].Category != guardrail.CategoryPromptInjection || findings[0].Score != 0.5 {
 		t.Fatalf("findings=%+v err=%v", findings, err)
 	}
-	if len(ignored) != 1 || ignored[0] != "some_new_jev_detector" {
+	if len(ignored) != 1 || ignored[0] != "something_else" {
 		t.Fatalf("ignored = %v", ignored)
 	}
 }
 
-func TestEveryCategoryHasDetector(t *testing.T) {
+func TestEveryCategoryHasQuestion(t *testing.T) {
 	seen := map[string]bool{}
 	for _, c := range guardrail.Categories() {
-		d, ok := DetectorFor(c.Category)
+		id, q, ok := QuestionFor(c.Category)
 		if !ok {
-			t.Errorf("no jev detector for %s", c.Category)
+			t.Errorf("no jev question for %s", c.Category)
+			continue
 		}
-		if seen[d] {
-			t.Errorf("detector %s mapped twice", d)
+		if seen[id] {
+			t.Errorf("question id %s mapped twice", id)
 		}
-		seen[d] = true
+		seen[id] = true
+		if q.Type != "noul" || !strings.Contains(q.Instructions, "`content`") || q.Criteria == nil ||
+			q.Criteria.True == "" || q.Criteria.False == "" {
+			t.Errorf("%s: malformed question %+v", c.Category, q)
+		}
+	}
+}
+
+func TestEveryContentTypeHasSource(t *testing.T) {
+	for _, ct := range guardrail.ContentTypes() {
+		if _, ok := sourceByContentType[ct]; !ok {
+			t.Errorf("no source description for %s", ct)
+		}
+	}
+}
+
+func TestModelConfiguration(t *testing.T) {
+	fj := &fakeJev{handler: respondScores(nil)}
+	srv := httptest.NewServer(fj)
+	defer srv.Close()
+	c, err := NewClient(ClientConfig{BaseURL: srv.URL + "/", APIKey: "k", Timeout: time.Second, Model: "jev-1.13.0", EvaluatePath: "custom/path"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Evaluate(context.Background(), SystemOneRequest{Model: "ignored"}); err != nil {
+		t.Fatal(err)
+	}
+	if fj.requests[0].Model != "jev-1.13.0" || fj.paths[0] != "/custom/path" {
+		t.Fatalf("model=%q path=%q", fj.requests[0].Model, fj.paths[0])
 	}
 }
 
@@ -248,7 +297,7 @@ func TestAuthHeaderConfiguration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _ = c.Evaluate(context.Background(), EvaluateRequest{Detectors: []string{"jailbreak"}})
+		_, _ = c.Evaluate(context.Background(), SystemOneRequest{})
 		srv.Close()
 		if got := fj.headers[0].Get(tc.wantHeader); got != tc.wantValue {
 			t.Errorf("%s = %q, want %q", tc.wantHeader, got, tc.wantValue)

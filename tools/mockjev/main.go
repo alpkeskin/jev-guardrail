@@ -1,5 +1,6 @@
-// Command mockjev is a DEVELOPMENT-ONLY stand-in for Jev that implements
-// the wire contract assumed by internal/jev with trivial keyword scoring.
+// Command mockjev is a DEVELOPMENT-ONLY stand-in for TypeSafe's System One
+// API (POST /v1/systemone) that answers the Noul questions asked by
+// internal/jev with trivial keyword scoring.
 // It is used for local development and CI smoke tests. Never deploy it.
 package main
 
@@ -13,22 +14,25 @@ import (
 )
 
 type request struct {
-	Input     string   `json:"input"`
-	Detectors []string `json:"detectors"`
+	State struct {
+		Content string `json:"content"`
+	} `json:"state"`
+	Model     string                     `json:"model"`
+	Questions map[string]json.RawMessage `json:"questions"`
 }
 
-type result struct {
-	Detector string  `json:"detector"`
-	Score    float64 `json:"score"`
+type answer struct {
+	Type string  `json:"type"`
+	Noul float64 `json:"noul"`
 }
 
 var keywords = map[string][]string{
 	"prompt_injection":      {"ignore all previous", "ignore previous instructions", "disregard your instructions"},
 	"jailbreak":             {"developer mode", "do anything now", "no restrictions"},
-	"system_prompt_leakage": {"system prompt", "your instructions verbatim"},
-	"secret_leakage":        {"api key", "password", "sk-live"},
-	"pii":                   {"ssn", "credit card", "social security"},
-	"harmful_instructions":  {"build a bomb", "make malware"},
+	"system_prompt_leak":    {"system prompt", "your instructions verbatim"},
+	"secret_exfiltration":   {"api key", "password", "sk-live"},
+	"sensitive_data":        {"ssn", "credit card", "social security"},
+	"malicious_instruction": {"build a bomb", "make malware"},
 	"malicious_url":         {"http://malware.", "phishing"},
 	"unsafe_content":        {"unsafe-test-marker"},
 }
@@ -40,29 +44,31 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("POST /v1/evaluate", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /v1/systemone", func(w http.ResponseWriter, r *http.Request) {
 		if *apiKey != "" && r.Header.Get("Authorization") != "Bearer "+*apiKey {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		var req request
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil ||
+			req.Model == "" || len(req.Questions) == 0 {
+			w.WriteHeader(http.StatusUnprocessableEntity)
 			return
 		}
-		input := strings.ToLower(req.Input)
+		input := strings.ToLower(req.State.Content)
 		out := struct {
-			Results []result `json:"results"`
-		}{Results: []result{}}
-		for _, d := range req.Detectors {
-			score := 0.02
-			for _, kw := range keywords[d] {
+			Model   string            `json:"model"`
+			Answers map[string]answer `json:"answers"`
+		}{Model: "mockjev", Answers: map[string]answer{}}
+		for id := range req.Questions {
+			p := 0.02
+			for _, kw := range keywords[id] {
 				if strings.Contains(input, kw) {
-					score = 0.97
+					p = 0.97
 					break
 				}
 			}
-			out.Results = append(out.Results, result{Detector: d, Score: score})
+			out.Answers[id] = answer{Type: "noul", Noul: p}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)

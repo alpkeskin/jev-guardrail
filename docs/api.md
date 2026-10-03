@@ -55,8 +55,8 @@ Failure codes map to HTTP status as follows:
 | `INVALID_REQUEST`     | 400 (413 if the body is too large) | Malformed JSON, or missing or empty `content` |
 | `UNSUPPORTED_CONTENT` | 400  | Unknown `content_type`, or content that is not valid UTF-8 |
 | `JEV_TIMEOUT`         | 503  | Jev did not answer within `JEV_TIMEOUT`, or Jev returned 408/504 |
-| `JEV_UNAVAILABLE`     | 503  | Connection failure, or Jev returned 502/503/429 |
-| `JEV_ERROR`           | 502  | Any other Jev error status, an invalid response, or a requested detector with no result |
+| `JEV_UNAVAILABLE`     | 503  | Connection failure, or Jev returned 502/503/429/529 |
+| `JEV_ERROR`           | 502  | Any other Jev error status, an invalid response, or a category Jev did not answer |
 | `INVALID_POLICY`      | 500  | No policy could be resolved |
 | `INTERNAL_ERROR`      | 500  | An unexpected error or a recovered panic |
 

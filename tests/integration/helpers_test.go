@@ -134,18 +134,18 @@ func (h *harness) guard(t *testing.T, body string, headers map[string]string) re
 	return r
 }
 
-// newFakeJev starts a fake Jev returning per-detector scores. delay makes
+// newFakeJev starts a fake Jev answering each question with scores[id]. delay makes
 // it slow; status != 0 makes it fail.
-func newFakeJev(t *testing.T, scores map[string]float64, delay time.Duration, status int) (*httptest.Server, *[]http.Header, *[]jev.EvaluateRequest) {
+func newFakeJev(t *testing.T, scores map[string]float64, delay time.Duration, status int) (*httptest.Server, *[]http.Header, *[]jev.SystemOneRequest) {
 	t.Helper()
 	var mu sync.Mutex
 	var headers []http.Header
-	var reqs []jev.EvaluateRequest
+	var reqs []jev.SystemOneRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			return
 		}
-		var req jev.EvaluateRequest
+		var req jev.SystemOneRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		mu.Lock()
 		headers = append(headers, r.Header.Clone())
@@ -162,12 +162,12 @@ func newFakeJev(t *testing.T, scores map[string]float64, delay time.Duration, st
 			w.WriteHeader(status)
 			return
 		}
-		resp := jev.EvaluateResponse{Results: []jev.DetectorResult{}}
-		for _, d := range req.Detectors {
-			s := scores[d]
-			resp.Results = append(resp.Results, jev.DetectorResult{Detector: d, Score: &s, Explanation: "JEV-INTERNAL-EXPLANATION"})
+		answers := map[string]any{}
+		for id := range req.Questions {
+			// Extra answer fields are part of the real API; they must never leak.
+			answers[id] = map[string]any{"type": "noul", "noul": scores[id], "legend": "JEV-INTERNAL-LEGEND"}
 		}
-		_ = json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "jev-1.13.0", "answers": answers})
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &headers, &reqs

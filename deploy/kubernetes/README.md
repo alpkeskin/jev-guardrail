@@ -17,7 +17,7 @@ overlays/production        Example overlay: namespace, pinned image, Jev URL, cl
 
    ```bash
    kubectl -n jev-guardrail create secret generic jev-guardrail-secrets \
-     --from-literal=jev-api-key='<jev api key>' \
+     --from-literal=jev-api-key='<typesafe api key>' \
      --from-file=gateway-api-keys=./gateway-api-keys   # one "name:key" per line
    ```
 
@@ -29,7 +29,9 @@ overlays/production        Example overlay: namespace, pinned image, Jev URL, cl
    `images: [{name: ghcr.io/alpkeskin/jev-guardrail, digest: sha256:...}]`.
    `make k8s-validate` rejects unpinned and `:latest` images.
 
-3. **Set `JEV_URL`** and add client policies in your overlay. Use
+3. **Pin `JEV_MODEL`** (for example `jev-1.13.0`) and add client policies
+   in your overlay. `JEV_URL` defaults to TypeSafe's hosted API
+   (`https://api.typesafe.ai`), so pods need egress to it. Use
    `behavior: merge` on the `jev-guardrail-policies` ConfigMap, as the
    example does. `default.yaml` comes from the base.
 

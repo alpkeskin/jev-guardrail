@@ -53,13 +53,13 @@ func NewResilientAPI(next API, breaker *resilience.Breaker, limiter *resilience.
 }
 
 // Evaluate implements API.
-func (r *ResilientAPI) Evaluate(ctx context.Context, req EvaluateRequest) (EvaluateResponse, error) {
+func (r *ResilientAPI) Evaluate(ctx context.Context, req SystemOneRequest) (SystemOneResponse, error) {
 	done := func(resilience.Outcome) {}
 	if r.breaker != nil {
 		d, err := r.breaker.Allow()
 		if err != nil {
 			r.observe(OutcomeCircuitOpen, 0)
-			return EvaluateResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable, err)
+			return SystemOneResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable, err)
 		}
 		done = d
 	}
@@ -70,11 +70,11 @@ func (r *ResilientAPI) Evaluate(ctx context.Context, req EvaluateRequest) (Evalu
 			done(resilience.Ignore)
 			if errors.Is(err, resilience.ErrLimitExceeded) {
 				r.observe(OutcomeLimitReached, 0)
-				return EvaluateResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable,
+				return SystemOneResponse{}, guardrail.NewEvaluationError(guardrail.ReasonJevUnavailable,
 					fmt.Errorf("jev concurrency limit (%d) reached", r.limiter.Capacity()))
 			}
 			r.observe(OutcomeCanceled, 0)
-			return EvaluateResponse{}, guardrail.NewEvaluationError(guardrail.ReasonInternalError, err)
+			return SystemOneResponse{}, guardrail.NewEvaluationError(guardrail.ReasonInternalError, err)
 		}
 		defer release()
 	}
